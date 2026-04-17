@@ -37,3 +37,9 @@ externalPort = 80
 deploymentTarget = "static"
 build = ["npm", "run", "build"]
 publicDir = "dist"
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://pbjcwjgwehutqrtmbtrs.supabase.co"
+VITE_SUPABASE_ANON_KEY = "sb_publishable_UO80qwkxYuHSWgtYcdlCwQ_Kyp4ss5G"
