@@ -7,6 +7,8 @@ const themes = [
   { value: "oled-black", label: "OLED Black" },
   { value: "classic-light", label: "Classic Light" },
   { value: "solarized", label: "Solarized" },
+  { value: "pink", label: "Pink" },
+  { value: "blue", label: "Blue" },
 ];
 
 export default function SettingsPanel() {

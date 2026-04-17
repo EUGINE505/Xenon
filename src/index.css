@@ -4,6 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Default: Professional Light (school look) ─────────────────────────── */
 :root {
   --bg: #eef1f5;
   --bg-soft: #f7f8fa;
@@ -23,25 +24,47 @@
   --code-bg: #f4f6f9;
 }
 
-[data-theme="oled-black"] {
-  --bg: #0a0a0a;
-  --bg-soft: #111111;
-  --panel: #1a1a1a;
-  --panel-soft: rgba(255, 255, 255, 0.04);
-  --border: #2e2e2e;
-  --border-strong: #4a7ec8;
-  --text: #e8ecf0;
-  --muted: #7a8898;
-  --accent: #4a7ec8;
-  --accent-soft: rgba(74, 126, 200, 0.15);
-  --accent-contrast: #ffffff;
-  --success: #2e9e5e;
-  --danger: #d94050;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-strong: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --code-bg: #0e0e0e;
+/* ── Xenon Dark (original dark theme) ──────────────────────────────────── */
+[data-theme="xenon-dark"] {
+  --bg: #09111d;
+  --bg-soft: #101a29;
+  --panel: #111d2e;
+  --panel-soft: rgba(255, 255, 255, 0.05);
+  --border: rgba(145, 175, 220, 0.18);
+  --border-strong: rgba(92, 182, 255, 0.45);
+  --text: #eef4ff;
+  --muted: #9ba9be;
+  --accent: #4fb8ff;
+  --accent-soft: rgba(79, 184, 255, 0.14);
+  --accent-contrast: #05111c;
+  --success: #49c67a;
+  --danger: #ff7b86;
+  --shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.36);
+  --code-bg: #07101a;
 }
 
+/* ── OLED Black ─────────────────────────────────────────────────────────── */
+[data-theme="oled-black"] {
+  --bg: #000000;
+  --bg-soft: #050505;
+  --panel: #0f0f0f;
+  --panel-soft: rgba(255, 255, 255, 0.04);
+  --border: #2a2a2a;
+  --border-strong: rgba(0, 216, 255, 0.45);
+  --text: #fafcff;
+  --muted: #a0a8b4;
+  --accent: #00d8ff;
+  --accent-soft: rgba(0, 216, 255, 0.13);
+  --accent-contrast: #001017;
+  --success: #49d989;
+  --danger: #ff7b86;
+  --shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  --shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.65);
+  --code-bg: #020202;
+}
+
+/* ── Classic Light ──────────────────────────────────────────────────────── */
 [data-theme="classic-light"] {
   --bg: #f5f7fa;
   --bg-soft: #ffffff;
@@ -61,6 +84,7 @@
   --code-bg: #f0f3f7;
 }
 
+/* ── Solarized ──────────────────────────────────────────────────────────── */
 [data-theme="solarized"] {
   --bg: #f4ede0;
   --bg-soft: #fdf6e3;
@@ -80,6 +104,47 @@
   --code-bg: #f0ead8;
 }
 
+/* ── Pink ───────────────────────────────────────────────────────────────── */
+[data-theme="pink"] {
+  --bg: #fdf0f5;
+  --bg-soft: #fff5f9;
+  --panel: #ffffff;
+  --panel-soft: #fde8f2;
+  --border: #f0c0d8;
+  --border-strong: #b5195f;
+  --text: #2d1020;
+  --muted: #8a5870;
+  --accent: #b5195f;
+  --accent-soft: rgba(181, 25, 95, 0.10);
+  --accent-contrast: #ffffff;
+  --success: #1a6e3e;
+  --danger: #c0103a;
+  --shadow: 0 2px 8px rgba(160, 30, 80, 0.10);
+  --shadow-strong: 0 4px 16px rgba(160, 30, 80, 0.15);
+  --code-bg: #fdf0f7;
+}
+
+/* ── Blue ───────────────────────────────────────────────────────────────── */
+[data-theme="blue"] {
+  --bg: #e8f0fe;
+  --bg-soft: #f0f5ff;
+  --panel: #ffffff;
+  --panel-soft: #dce8fd;
+  --border: #b0c8f0;
+  --border-strong: #1558c0;
+  --text: #0c1e40;
+  --muted: #456080;
+  --accent: #1558c0;
+  --accent-soft: rgba(21, 88, 192, 0.10);
+  --accent-contrast: #ffffff;
+  --success: #1a6e3e;
+  --danger: #b91c2c;
+  --shadow: 0 2px 8px rgba(20, 60, 160, 0.10);
+  --shadow-strong: 0 4px 16px rgba(20, 60, 160, 0.15);
+  --code-bg: #eef4ff;
+}
+
+/* ── Base styles ────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
 }
@@ -136,7 +201,7 @@ h1, h2, h3, h4 {
 }
 
 .xenon-panel:hover {
-  border-color: #a0aab8;
+  border-color: var(--border-strong);
   box-shadow: var(--shadow-strong);
 }
 
@@ -148,7 +213,7 @@ h1, h2, h3, h4 {
 }
 
 .xenon-panel-muted:hover {
-  border-color: #a0aab8;
+  border-color: var(--border-strong);
 }
 
 .xenon-btn,
@@ -163,7 +228,7 @@ h1, h2, h3, h4 {
   padding: 0.55rem 1.1rem;
   font-weight: 600;
   font-size: 0.875rem;
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease, color 120ms ease;
 }
 
 .xenon-btn {
@@ -173,13 +238,12 @@ h1, h2, h3, h4 {
 }
 
 .xenon-btn:hover {
-  background: #162e58;
-  border-color: #162e58;
+  filter: brightness(1.12);
 }
 
 .xenon-btn-ghost {
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: transparent;
   color: var(--text);
 }
 
@@ -196,7 +260,7 @@ h1, h2, h3, h4 {
 }
 
 .xenon-btn-subtle:hover {
-  border-color: #a0aab8;
+  border-color: var(--border-strong);
   color: var(--text);
 }
 
@@ -222,7 +286,7 @@ h1, h2, h3, h4 {
 
 .xenon-pill {
   background: var(--accent-soft);
-  border-color: rgba(30, 58, 110, 0.2);
+  border-color: var(--border-strong);
   color: var(--accent);
 }
 

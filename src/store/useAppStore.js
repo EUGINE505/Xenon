@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { supabase } from "../lib/supabase";
 import { generateClassCode } from "../lib/classCode";
 
-const THEMES = ["xenon-dark", "oled-black", "classic-light", "solarized"];
+const THEMES = ["xenon-dark", "oled-black", "classic-light", "solarized", "pink", "blue"];
 
 const getStoredTheme = () => {
   if (typeof window === "undefined") return "xenon-dark";
