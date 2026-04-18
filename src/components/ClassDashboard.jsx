@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../store/useAppStore";
+import { supabase } from "../lib/supabase";
 
 const formatPracticeTime = (seconds = 0) => {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -11,80 +12,229 @@ const formatPracticeTime = (seconds = 0) => {
   return `${totalSeconds}s`;
 };
 
-export default function ClassDashboard() {
-  const { classes, createClass, removeStudentFromClass, loadTeacherClasses } = useAppStore();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
+const MEDALS = {
+  1: { icon: "🥇", label: "1st Place", bg: "rgba(255,215,0,0.12)", border: "rgba(255,190,0,0.45)", text: "#8a6000" },
+  2: { icon: "🥈", label: "2nd Place", bg: "rgba(192,192,192,0.14)", border: "rgba(160,160,160,0.5)", text: "#5a5a5a" },
+  3: { icon: "🥉", label: "3rd Place", bg: "rgba(205,127,50,0.14)", border: "rgba(180,100,30,0.45)", text: "#7a4a10" },
+};
 
-  const submitClass = async () => {
-    setStatus("");
-    setError("");
-    if (!name.trim() || !description.trim()) {
-      setError("Class name and description are required.");
-      return;
-    }
+function ClassAnnouncementsPanel({ cls }) {
+  const { postAnnouncement, deleteAnnouncement } = useAppStore();
+  const [message, setMessage] = useState("");
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    setLoading(true);
     try {
-      await createClass({ name: name.trim(), description: description.trim() });
-      setStatus("Class created.");
-      setName("");
-      setDescription("");
-    } catch (err) {
-      setError(err?.message || "Could not create class.");
-    }
+      const { data } = await supabase.from("class_announcements").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      setAnnouncements(data || []);
+      setLoaded(true);
+    } catch { setLoaded(true); }
+    setLoading(false);
   };
 
-  const refreshClasses = async () => {
-    setStatus("");
-    setError("");
-    setRefreshing(true);
+  const submit = async () => {
+    if (!message.trim()) return;
+    setErr("");
     try {
-      await loadTeacherClasses();
-      setStatus("Class data refreshed.");
-    } catch (err) {
-      setError(err?.message || "Could not refresh class data.");
-    } finally {
-      setRefreshing(false);
-    }
+      await postAnnouncement({ classId: cls.id, message });
+      setMessage("");
+      await load();
+    } catch (e) { setErr(e?.message || "Could not post."); }
   };
+
+  const remove = async (id) => {
+    try { await deleteAnnouncement(id); await load(); } catch {}
+  };
+
+  if (!loaded) return (
+    <div className="mt-4">
+      <button className="xenon-btn-subtle" onClick={load} disabled={loading}>
+        {loading ? "Loading..." : "Load Announcements"}
+      </button>
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
-      <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-        <h2 className="text-2xl font-semibold">Class Dashboard</h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">Create a class and manage your students.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <input className="xenon-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Class Name" />
-          <input className="xenon-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className="xenon-btn" onClick={submitClass}>Create Class</button>
-          <button className="xenon-btn-ghost" disabled={refreshing} onClick={refreshClasses}>
-            {refreshing ? "Refreshing..." : "Refresh Leaderboard"}
-          </button>
-        </div>
-        {status && <p className="mt-3 text-sm text-green-400">{status}</p>}
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-      </motion.section>
-
-      {!classes.length && (
-        <section className="xenon-panel p-6">
-          <p className="text-sm text-[var(--muted)]">No classes yet.</p>
-        </section>
-      )}
-
-      {classes.map((cls) => (
-        <motion.section key={cls.id} className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-semibold">{cls.name}</h3>
-              <p className="mt-1 text-sm text-[var(--muted)]">{cls.description}</p>
+    <div className="mt-4 space-y-4">
+      <div className="flex gap-2">
+        <textarea
+          className="xenon-input flex-1 resize-none"
+          rows={2}
+          placeholder="Type an announcement for your students..."
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+        />
+        <button className="xenon-btn self-start" onClick={submit}>Post</button>
+      </div>
+      {err && <p className="text-sm text-red-500">{err}</p>}
+      {!announcements.length ? (
+        <p className="text-sm text-[var(--muted)]">No announcements yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {announcements.map((a) => (
+            <div key={a.id} className="xenon-panel-muted flex items-start justify-between gap-3 p-4">
+              <div>
+                <p className="text-sm leading-relaxed">{a.message}</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">{new Date(a.created_at).toLocaleString()}</p>
+              </div>
+              <button className="xenon-btn-ghost text-xs" onClick={() => remove(a.id)}>Delete</button>
             </div>
-            <span className="xenon-pill xenon-code">{cls.class_code}</span>
-          </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
+function ClassAssignmentsPanel({ cls }) {
+  const { postAssignment, deleteAssignment, loadSubmissions } = useAppStore();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [assignments, setAssignments] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [subsLoading, setSubsLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.from("class_assignments").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      setAssignments(data || []);
+      setLoaded(true);
+    } catch { setLoaded(true); }
+    setLoading(false);
+  };
+
+  const submit = async () => {
+    if (!title.trim() || !description.trim()) { setErr("Title and description are required."); return; }
+    setErr("");
+    try {
+      await postAssignment({ classId: cls.id, title, description, dueDate });
+      setTitle(""); setDescription(""); setDueDate("");
+      await load();
+    } catch (e) { setErr(e?.message || "Could not post assignment."); }
+  };
+
+  const remove = async (id) => {
+    try { await deleteAssignment(id); await load(); } catch {}
+  };
+
+  const viewSubs = async (assignmentId) => {
+    if (expandedId === assignmentId) { setExpandedId(null); return; }
+    setExpandedId(assignmentId);
+    setSubsLoading(true);
+    const data = await loadSubmissions(assignmentId);
+    setSubmissions(data);
+    setSubsLoading(false);
+  };
+
+  if (!loaded) return (
+    <div className="mt-4">
+      <button className="xenon-btn-subtle" onClick={load} disabled={loading}>
+        {loading ? "Loading..." : "Load Assignments"}
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <input className="xenon-input" placeholder="Assignment title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input className="xenon-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+        <textarea
+          className="xenon-input w-full resize-none"
+          rows={3}
+          placeholder="Describe the task for your students..."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <button className="xenon-btn" onClick={submit}>Set Assignment</button>
+        </div>
+        {err && <p className="text-sm text-red-500">{err}</p>}
+      </div>
+
+      {!assignments.length ? (
+        <p className="text-sm text-[var(--muted)]">No assignments set yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {assignments.map((a) => (
+            <div key={a.id} className="xenon-panel-muted p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{a.title}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">{a.description}</p>
+                  {a.due_date && (
+                    <p className="mt-1 text-xs text-[var(--muted)]">Due: {new Date(a.due_date).toLocaleDateString()}</p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button className="xenon-btn-subtle text-xs" onClick={() => viewSubs(a.id)}>
+                    {expandedId === a.id ? "Hide Submissions" : "View Submissions"}
+                  </button>
+                  <button className="xenon-btn-ghost text-xs" onClick={() => remove(a.id)}>Delete</button>
+                </div>
+              </div>
+              {expandedId === a.id && (
+                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                  {subsLoading ? (
+                    <p className="text-sm text-[var(--muted)]">Loading submissions...</p>
+                  ) : !submissions.length ? (
+                    <p className="text-sm text-[var(--muted)]">No submissions yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {submissions.map((s) => (
+                        <div key={s.id} className="rounded border border-[var(--border)] p-3">
+                          <p className="text-sm font-semibold">{s.profiles?.first_name || s.profiles?.username || "Student"}</p>
+                          {s.notes && <p className="mt-1 text-xs text-[var(--muted)]">{s.notes}</p>}
+                          <p className="mt-1 text-xs text-[var(--muted)]">Submitted: {new Date(s.submitted_at).toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClassCard({ cls, removeStudentFromClass }) {
+  const [tab, setTab] = useState("overview");
+
+  return (
+    <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-semibold">{cls.name}</h3>
+          <p className="mt-1 text-sm text-[var(--muted)]">{cls.description}</p>
+        </div>
+        <span className="xenon-pill xenon-code">{cls.class_code}</span>
+      </div>
+
+      <div className="mt-5 flex gap-1 border-b border-[var(--border)]">
+        {["overview", "announcements", "assignments"].map((t) => (
+          <button key={t} className="xenon-tab capitalize" data-active={tab === t} onClick={() => setTab(t)}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" && (
+        <div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <div className="xenon-panel-muted p-4">
               <p className="xenon-kicker">Students</p>
@@ -93,72 +243,58 @@ export default function ClassDashboard() {
             <div className="xenon-panel-muted p-4">
               <p className="xenon-kicker">Total Practice Time</p>
               <p className="mt-2 text-xl font-semibold">
-                {formatPracticeTime((cls.class_members || []).reduce((sum, member) => sum + (member.total_time_seconds || 0), 0))}
+                {formatPracticeTime((cls.class_members || []).reduce((s, m) => s + (m.total_time_seconds || 0), 0))}
               </p>
             </div>
             <div className="xenon-panel-muted p-4">
-              <p className="xenon-kicker">Total Projects</p>
+              <p className="xenon-kicker">Skills Correct (Total)</p>
               <p className="mt-2 text-xl font-semibold">
-                {(cls.class_members || []).reduce((sum, member) => sum + (member.total_projects || 0), 0)}
+                {(cls.class_members || []).reduce((s, m) => s + (m.practice_questions_correct || 0), 0)}
               </p>
             </div>
-          </div>
-
-          <div className="xenon-panel-muted mt-4 p-4">
-            <p className="xenon-kicker">Practise Questions Correct</p>
-            <p className="mt-2 text-xl font-semibold">
-              {(cls.class_members || []).reduce((sum, member) => sum + (member.practice_questions_correct || 0), 0)}
-            </p>
           </div>
 
           <div className="mt-5">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-lg font-semibold">Leaderboard</h4>
-              <span className="text-sm text-[var(--muted)]">Top students by skills correct, then projects, then time spent</span>
+              <span className="text-sm text-[var(--muted)]">Ranked by skills, projects, time</span>
             </div>
             <div className="mt-4 space-y-3">
-              {(cls.leaderboard || cls.class_members || [])
-                .map((member, index) => {
-                  const rank = member.rank || index + 1;
-                  const medal =
-                    rank === 1 ? { icon: "🥇", label: "1st Place", bg: "rgba(255,215,0,0.12)", border: "rgba(255,190,0,0.45)", text: "#8a6000" } :
-                    rank === 2 ? { icon: "🥈", label: "2nd Place", bg: "rgba(192,192,192,0.14)", border: "rgba(160,160,160,0.5)", text: "#5a5a5a" } :
-                    rank === 3 ? { icon: "🥉", label: "3rd Place", bg: "rgba(205,127,50,0.14)", border: "rgba(180,100,30,0.45)", text: "#7a4a10" } :
-                    null;
-                  return (
-                    <div
-                      key={member.student_id}
-                      className="xenon-panel-muted flex flex-wrap items-center justify-between gap-3 p-4"
-                      style={medal ? { borderColor: medal.border, background: medal.bg } : undefined}
-                    >
-                      <div className="flex items-center gap-4">
+              {(cls.leaderboard || cls.class_members || []).map((member, index) => {
+                const rank = member.rank || index + 1;
+                const medal = MEDALS[rank] || null;
+                return (
+                  <div
+                    key={member.student_id}
+                    className="xenon-panel-muted flex flex-wrap items-center justify-between gap-3 p-4"
+                    style={medal ? { borderColor: medal.border, background: medal.bg } : undefined}
+                  >
+                    <div className="flex items-center gap-4">
+                      {medal ? (
+                        <span className="text-2xl leading-none">{medal.icon}</span>
+                      ) : (
+                        <span className="xenon-pill">#{rank}</span>
+                      )}
+                      <div>
                         <div className="flex items-center gap-2">
-                          {medal ? (
-                            <span className="text-2xl leading-none" title={medal.label}>{medal.icon}</span>
-                          ) : (
-                            <span className="xenon-pill">#{rank}</span>
+                          <p className="font-semibold">{member.profiles?.first_name || member.profiles?.username || "Student"}</p>
+                          {medal && (
+                            <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
+                              {medal.label}
+                            </span>
                           )}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">{member.profiles?.first_name || member.profiles?.username || "Student"}</p>
-                            {medal && (
-                              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
-                                {medal.label}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-[var(--muted)]">@{member.profiles?.username || "unknown"}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-3 text-sm">
-                        <span className="xenon-badge">{member.practice_questions_correct || 0} correct</span>
-                        <span className="xenon-badge">{member.total_projects || 0} projects</span>
-                        <span className="xenon-badge">{formatPracticeTime(member.total_time_seconds || 0)}</span>
+                        <p className="text-sm text-[var(--muted)]">@{member.profiles?.username || "unknown"}</p>
                       </div>
                     </div>
-                  );
-                })}
+                    <div className="flex flex-wrap gap-3 text-sm">
+                      <span className="xenon-badge">{member.practice_questions_correct || 0} correct</span>
+                      <span className="xenon-badge">{member.total_projects || 0} projects</span>
+                      <span className="xenon-badge">{formatPracticeTime(member.total_time_seconds || 0)}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -184,7 +320,7 @@ export default function ClassDashboard() {
                       <td className="py-3 pr-4">{formatPracticeTime(member.total_time_seconds || 0)}</td>
                       <td className="py-3 pr-4">{member.total_projects || 0}</td>
                       <td className="py-3">
-                        <button className="xenon-btn-ghost" onClick={() => removeStudentFromClass({ classId: cls.id, studentId: member.student_id })}>
+                        <button className="xenon-btn-ghost text-xs" onClick={() => removeStudentFromClass({ classId: cls.id, studentId: member.student_id })}>
                           Remove
                         </button>
                       </td>
@@ -198,7 +334,67 @@ export default function ClassDashboard() {
               </tbody>
             </table>
           </div>
-        </motion.section>
+        </div>
+      )}
+
+      {tab === "announcements" && <ClassAnnouncementsPanel cls={cls} />}
+      {tab === "assignments" && <ClassAssignmentsPanel cls={cls} />}
+    </motion.section>
+  );
+}
+
+export default function ClassDashboard() {
+  const { classes, createClass, removeStudentFromClass, loadTeacherClasses } = useAppStore();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const submitClass = async () => {
+    setStatus(""); setError("");
+    if (!name.trim() || !description.trim()) { setError("Class name and description are required."); return; }
+    try {
+      await createClass({ name: name.trim(), description: description.trim() });
+      setStatus("Class created.");
+      setName(""); setDescription("");
+    } catch (err) { setError(err?.message || "Could not create class."); }
+  };
+
+  const refreshClasses = async () => {
+    setStatus(""); setError(""); setRefreshing(true);
+    try { await loadTeacherClasses(); setStatus("Class data refreshed."); }
+    catch (err) { setError(err?.message || "Could not refresh."); }
+    finally { setRefreshing(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+        <h2 className="text-2xl font-semibold">Class Dashboard</h2>
+        <p className="mt-2 text-sm text-[var(--muted)]">Create classes, post announcements, set assignments, and manage students.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <input className="xenon-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Class Name" />
+          <input className="xenon-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="xenon-btn" onClick={submitClass}>Create Class</button>
+          <button className="xenon-btn-ghost" disabled={refreshing} onClick={refreshClasses}>
+            {refreshing ? "Refreshing..." : "Refresh Data"}
+          </button>
+        </div>
+        {status && <p className="mt-3 text-sm text-green-600">{status}</p>}
+        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      </motion.section>
+
+      {!classes.length && (
+        <section className="xenon-panel p-6">
+          <p className="text-sm text-[var(--muted)]">No classes yet. Create one above.</p>
+        </section>
+      )}
+
+      {classes.map((cls) => (
+        <ClassCard key={cls.id} cls={cls} removeStudentFromClass={removeStudentFromClass} />
       ))}
     </div>
   );

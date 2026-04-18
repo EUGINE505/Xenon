@@ -1,7 +1,7 @@
 # Xenon Code (Trinket)
 
 ## Overview
-A browser-based Python learning environment for GCSE students. Users can write, run, and save Python code directly in the browser. Includes guided activities like Parsons Problems and a class management system for teachers and students.
+A browser-based Python learning environment for GCSE students. Users can write, run, and save Python code directly in the browser. Includes guided activities like Parsons Problems, a class management system for teachers and students, achievements, daily streaks, announcements, and assignments.
 
 ## Tech Stack
 - **Frontend:** React 19 + Vite 8

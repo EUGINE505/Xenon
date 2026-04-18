@@ -121,6 +121,10 @@ export const useAppStore = create((set, get) => ({
   authSubscription: null,
   practiceSecondsPending: 0,
   completedPracticeSkills: {},
+  announcements: [],
+  assignments: [],
+  achievements: [],
+  streak: { current: 0, longest: 0 },
   resetSessionState: () =>
     set({
       user: null,
@@ -135,6 +139,10 @@ export const useAppStore = create((set, get) => ({
       showProfileSetup: false,
       practiceSecondsPending: 0,
       completedPracticeSkills: {},
+      announcements: [],
+      assignments: [],
+      achievements: [],
+      streak: { current: 0, longest: 0 },
     }),
 
   setTheme: (theme) => {
@@ -167,6 +175,7 @@ export const useAppStore = create((set, get) => ({
     await get().ensureProfileExists(sessionUser);
     const profile = await get().loadProfile(sessionUser);
     await get().loadProjects(sessionUser.id);
+    get().initStreak();
 
     if (profile?.role === "teacher") {
       await get().loadTeacherClasses(sessionUser.id);
@@ -177,6 +186,7 @@ export const useAppStore = create((set, get) => ({
 
     if (profile?.role === "student") {
       await get().loadStudentClass({ sessionUser, profile });
+      get().loadAchievements().catch(() => {});
     } else {
       set({ enrolledClass: null });
     }
@@ -502,6 +512,7 @@ export const useAppStore = create((set, get) => ({
     if (isNewProject && profile?.role === "student" && enrolledClass?.id) {
       await get().updateClassMemberStats({ projectsDelta: 1 });
     }
+    if (profile?.role === "student") get().checkAndGrantAchievements().catch(() => {});
   },
 
   createClass: async ({ name, description }) => {
@@ -628,6 +639,9 @@ export const useAppStore = create((set, get) => ({
       },
     });
     await get().syncStudentProjectCount(get().projects.length, member.total_projects);
+    get().loadAnnouncements(member.class_id).catch(() => {});
+    get().loadAssignments(member.class_id).catch(() => {});
+    get().checkAndGrantAchievements().catch(() => {});
     return {
       ...rankedClass,
       total_time_seconds: member.total_time_seconds,
@@ -820,6 +834,7 @@ export const useAppStore = create((set, get) => ({
       };
     });
     await get().loadStudentClass({ sessionUser: user, profile });
+    get().checkAndGrantAchievements().catch(() => {});
     return { status: "counted", totalCorrect: nextCorrect };
   },
 
@@ -850,4 +865,113 @@ export const useAppStore = create((set, get) => ({
     if (error) throw error;
     set({ enrolledClass: null });
   },
+
+  initStreak: () => {
+    try {
+      const STREAK_KEY = 'xenon-streak';
+      const today = new Date().toISOString().slice(0, 10);
+      let stored = {};
+      try { stored = JSON.parse(localStorage.getItem(STREAK_KEY) || '{}'); } catch {}
+      let current = stored.current || 0;
+      let longest = stored.longest || 0;
+      const lastDate = stored.lastDate || null;
+      if (!lastDate || lastDate === today) {
+        current = Math.max(current, 1);
+      } else {
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        current = lastDate === yesterday ? current + 1 : 1;
+      }
+      longest = Math.max(longest, current);
+      localStorage.setItem(STREAK_KEY, JSON.stringify({ current, longest, lastDate: today }));
+      set({ streak: { current, longest } });
+    } catch {}
+  },
+
+  loadAchievements: async () => {
+    const { user } = get();
+    if (!user) return;
+    try {
+      const { data } = await supabase.from('user_achievements').select('achievement_key, earned_at').eq('user_id', user.id);
+      set({ achievements: data || [] });
+    } catch { set({ achievements: [] }); }
+  },
+
+  checkAndGrantAchievements: async () => {
+    const { user, enrolledClass, projects, streak, achievements, profile } = get();
+    if (!user || profile?.role !== 'student') return;
+    try {
+      const earned = new Set((achievements || []).map((a) => a.achievement_key));
+      const toGrant = [];
+      if (projects.length >= 1 && !earned.has('first_project')) toGrant.push('first_project');
+      if (enrolledClass) {
+        if (!earned.has('joined_class')) toGrant.push('joined_class');
+        const correct = enrolledClass.practice_questions_correct || 0;
+        if (correct >= 5 && !earned.has('skills_5')) toGrant.push('skills_5');
+        if (correct >= 25 && !earned.has('skills_25')) toGrant.push('skills_25');
+        if (correct >= 100 && !earned.has('skills_100')) toGrant.push('skills_100');
+        const rank = enrolledClass.rank;
+        if (rank && rank <= 3 && !earned.has('top_3')) toGrant.push('top_3');
+        if (rank === 1 && !earned.has('top_1')) toGrant.push('top_1');
+      }
+      const streakVal = streak?.current || 0;
+      if (streakVal >= 3 && !earned.has('streak_3')) toGrant.push('streak_3');
+      if (streakVal >= 7 && !earned.has('streak_7')) toGrant.push('streak_7');
+      if (!toGrant.length) return;
+      const now = new Date().toISOString();
+      await supabase.from('user_achievements').insert(toGrant.map((key) => ({ user_id: user.id, achievement_key: key, earned_at: now })));
+      await get().loadAchievements();
+    } catch {}
+  },
+
+  loadAnnouncements: async (classId) => {
+    const cls = classId || get().enrolledClass?.id;
+    if (!cls) { set({ announcements: [] }); return; }
+    try {
+      const { data } = await supabase.from('class_announcements').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      set({ announcements: data || [] });
+    } catch { set({ announcements: [] }); }
+  },
+
+  postAnnouncement: async ({ classId, message }) => {
+    const { user } = get();
+    const { error } = await supabase.from('class_announcements').insert({ class_id: classId, teacher_id: user.id, message: message.trim() });
+    if (error) throw error;
+  },
+
+  deleteAnnouncement: async (id) => {
+    const { error } = await supabase.from('class_announcements').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  loadAssignments: async (classId) => {
+    const cls = classId || get().enrolledClass?.id;
+    if (!cls) { set({ assignments: [] }); return; }
+    try {
+      const { data } = await supabase.from('class_assignments').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      set({ assignments: data || [] });
+    } catch { set({ assignments: [] }); }
+  },
+
+  postAssignment: async ({ classId, title, description, dueDate }) => {
+    const { user } = get();
+    const { error } = await supabase.from('class_assignments').insert({ class_id: classId, teacher_id: user.id, title: title.trim(), description: description.trim(), due_date: dueDate || null });
+    if (error) throw error;
+  },
+
+  deleteAssignment: async (id) => {
+    const { error } = await supabase.from('class_assignments').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  submitAssignment: async ({ assignmentId, notes }) => {
+    const { user, enrolledClass } = get();
+    const { error } = await supabase.from('assignment_submissions').upsert({ assignment_id: assignmentId, class_id: enrolledClass?.id, student_id: user.id, notes: notes || '', submitted_at: new Date().toISOString() }, { onConflict: 'assignment_id,student_id' });
+    if (error) throw error;
+  },
+
+  loadSubmissions: async (assignmentId) => {
+    const { data } = await supabase.from('assignment_submissions').select('*, profiles(username, first_name)').eq('assignment_id', assignmentId);
+    return data || [];
+  },
+
 }));
