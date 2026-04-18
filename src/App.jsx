@@ -34,6 +34,46 @@ const formatPracticeTime = (seconds = 0) => {
   return `${totalSeconds}s`;
 };
 
+const LOAD_HINTS = [
+  { after: 2500, text: "Checking your account details..." },
+  { after: 5000, text: "If you just signed up, please check your email and click the verification link." },
+  { after: 9000, text: "Still loading — this is taking longer than usual." },
+  { after: 13000, text: "If you have not verified your email yet, look for a message from Xenon Code in your inbox." },
+  { after: 18000, text: "Account not found or session expired. Try refreshing the page or signing in again." },
+];
+
+function LoadingScreen() {
+  const [hint, setHint] = useState(null);
+
+  useEffect(() => {
+    const timers = LOAD_HINTS.map(({ after, text }) =>
+      setTimeout(() => setHint(text), after)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div className="xenon-shell flex min-h-screen flex-col items-center justify-center px-4">
+      <div className="xenon-panel mx-auto w-full max-w-sm p-8 text-center">
+        <img src="/xenon-logo.svg" alt="Xenon Code" className="mx-auto mb-5 h-12 w-12 rounded-xl" />
+        <p className="text-base font-semibold">Loading Xenon Code...</p>
+        <div className="mt-3 flex justify-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent)]"
+              style={{ animation: `pulse 1.2s ease-in-out ${i * 0.3}s infinite` }}
+            />
+          ))}
+        </div>
+        {hint && (
+          <p className="mt-6 text-xs leading-relaxed text-[var(--muted)]">{hint}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HomeView({ profile, enrolledClass, projectsCount, onNavigate }) {
   return (
     <motion.section className="space-y-4" {...motionProps}>
@@ -292,16 +332,7 @@ export default function App() {
   ];
 
   if (!authHydrated) {
-    return (
-      <div className="xenon-shell flex min-h-screen items-center justify-center px-4">
-        <div className="w-full max-w-6xl">
-          <div className="xenon-panel mx-auto w-full max-w-sm p-6 text-center">
-            <p className="text-sm text-[var(--muted)]">Loading Xenon Code...</p>
-          </div>
-          <SiteFooter />
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user) return <AuthGate initialMode="landing" />;
