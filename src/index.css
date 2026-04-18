@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -163,7 +163,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Poppins", system-ui, sans-serif;
 }
 
 button,
@@ -185,11 +185,32 @@ code,
 }
 
 h1, h2, h3, h4 {
-  font-family: "Source Serif 4", Georgia, serif;
+  font-family: "Poppins", system-ui, sans-serif;
 }
 
 .xenon-shell {
   min-height: 100vh;
+}
+
+.xenon-header {
+  background: var(--panel);
+  border-bottom: 2px solid var(--accent);
+  box-shadow: 0 2px 12px rgba(30, 40, 60, 0.08);
+}
+
+.xenon-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 .xenon-panel {
@@ -316,6 +337,36 @@ h1, h2, h3, h4 {
   font-weight: 600;
 }
 
+/* ── Professional header nav tabs ──────────────────────────────────────── */
+.xenon-nav-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+  transition: color 120ms ease, border-color 120ms ease;
+  margin-bottom: -1px;
+}
+
+.xenon-nav-tab:hover {
+  color: var(--text);
+  border-bottom-color: var(--border);
+}
+
+.xenon-nav-tab[data-active="true"] {
+  color: var(--accent);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
 .xenon-input {
   width: 100%;
   border: 1px solid var(--border);
@@ -373,10 +424,11 @@ h1, h2, h3, h4 {
 }
 
 .xenon-section-title {
-  font-family: "Source Serif 4", Georgia, serif;
+  font-family: "Poppins", system-ui, sans-serif;
   font-size: clamp(1.75rem, 3.5vw, 2.8rem);
-  line-height: 1.1;
-  letter-spacing: -0.01em;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
 }
 
 .xenon-subtitle {

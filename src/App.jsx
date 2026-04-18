@@ -306,70 +306,92 @@ export default function App() {
 
   if (!user) return <AuthGate initialMode="landing" />;
 
+  const studentRank = profile?.role === "student" ? enrolledClass?.rank : null;
+  const rankMedal =
+    studentRank === 1 ? "🥇" :
+    studentRank === 2 ? "🥈" :
+    studentRank === 3 ? "🥉" : null;
+
+  const displayName = profile?.first_name || profile?.username || "User";
+  const avatarInitials = displayName.slice(0, 2).toUpperCase();
+
   return (
-    <div className="xenon-shell px-4 py-4 md:px-6">
+    <div className="xenon-shell">
       {showInitOverlay && <InitOverlay />}
       {showProfileSetup && <ProfileSetupModal />}
 
-      <motion.nav
-        className="xenon-panel mb-5 p-4"
+      <motion.header
+        className="xenon-header sticky top-0 z-30"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="mx-auto max-w-screen-xl px-4 md:px-6">
+          {/* Top row: logo + user info */}
+          <div className="flex items-center justify-between gap-4 py-3">
             <div className="flex items-center gap-3">
-              <img src="/xenon-logo.svg" alt="Xenon Code logo" className="h-12 w-12 rounded-2xl" />
+              <img src="/xenon-logo.svg" alt="Xenon Code logo" className="h-9 w-9 rounded-lg" />
               <div>
-                <h1 className="text-lg font-semibold">Xenon Code</h1>
-                <p className="text-sm text-[var(--muted)]">Simple Python learning</p>
+                <span className="text-base font-bold tracking-tight">Xenon Code</span>
+                <span className="ml-2 hidden text-xs font-medium text-[var(--muted)] sm:inline">GCSE Python Learning</span>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {navigation.map((item) => (
-                <button
-                  key={item.id}
-                  className="xenon-tab"
-                  data-active={tab === item.id}
-                  onClick={() => setTab(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
+
+            <div className="flex items-center gap-3">
+              {rankMedal && (
+                <span className="text-xl leading-none" title={`Rank #${studentRank} in your class`}>{rankMedal}</span>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="xenon-avatar">{avatarInitials}</span>
+                <div className="hidden sm:block text-right">
+                  <p className="text-sm font-semibold leading-tight">{displayName}</p>
+                  <p className="text-xs text-[var(--muted)] leading-tight capitalize">
+                    {profile?.role || "no role"}
+                    {studentRank ? ` · Rank #${studentRank}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button className="xenon-btn-ghost text-sm" onClick={signOut}>Sign Out</button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={clsx("xenon-badge", roleStyles[profile?.role || "none"])}>
-              {profile?.role || "none"}
-            </span>
-            <button className="xenon-btn-ghost" onClick={signOut}>
-              Log Out
-            </button>
+          {/* Bottom row: nav tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-0" style={{ borderTop: "1px solid var(--border)" }}>
+            {navigation.map((item) => (
+              <button
+                key={item.id}
+                className="xenon-nav-tab"
+                data-active={tab === item.id}
+                onClick={() => setTab(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
-      </motion.nav>
+      </motion.header>
 
-      <AnimatePresence mode="wait">
-        {tab === "home" && (
-          <HomeView
-            key="home"
-            profile={profile}
-            enrolledClass={enrolledClass}
-            projectsCount={projects.length}
-            onNavigate={setTab}
-          />
-        )}
-        {tab === "code" && <motion.div key="code" {...motionProps}><XenonIDE /></motion.div>}
-        {tab === "theory" && <motion.div key="theory" {...motionProps}><TheoryComingSoon /></motion.div>}
-        {tab === "projects" && <SavedProjects key="projects" onOpenIde={() => setTab("code")} />}
-        {tab === "parsons" && <motion.div key="parsons" {...motionProps}><ParsonsProblem /></motion.div>}
-        {tab === "settings" && <motion.div key="settings" {...motionProps}><SettingsPanel /></motion.div>}
-        {tab === "class" && profile?.role === "teacher" && <motion.div key="class" {...motionProps}><ClassDashboard /></motion.div>}
-        {tab === "view-class" && profile?.role === "student" && <StudentClassView key="view-class" />}
-      </AnimatePresence>
+      <div className="mx-auto max-w-screen-xl px-4 py-5 md:px-6">
+        <AnimatePresence mode="wait">
+          {tab === "home" && (
+            <HomeView
+              key="home"
+              profile={profile}
+              enrolledClass={enrolledClass}
+              projectsCount={projects.length}
+              onNavigate={setTab}
+            />
+          )}
+          {tab === "code" && <motion.div key="code" {...motionProps}><XenonIDE /></motion.div>}
+          {tab === "theory" && <motion.div key="theory" {...motionProps}><TheoryComingSoon /></motion.div>}
+          {tab === "projects" && <SavedProjects key="projects" onOpenIde={() => setTab("code")} />}
+          {tab === "parsons" && <motion.div key="parsons" {...motionProps}><ParsonsProblem /></motion.div>}
+          {tab === "settings" && <motion.div key="settings" {...motionProps}><SettingsPanel /></motion.div>}
+          {tab === "class" && profile?.role === "teacher" && <motion.div key="class" {...motionProps}><ClassDashboard /></motion.div>}
+          {tab === "view-class" && profile?.role === "student" && <StudentClassView key="view-class" />}
+        </AnimatePresence>
 
-      <SiteFooter />
+        <SiteFooter />
+      </div>
     </div>
   );
 }
