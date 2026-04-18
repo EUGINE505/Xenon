@@ -52,10 +52,10 @@ export default function XenonIDE() {
     flushPracticeTime,
   } = useAppStore();
 
-  const monacoTheme = useMemo(
-    () => (theme === "classic-light" || theme === "solarized" ? "xenon-light" : "xenon-dark"),
-    [theme],
-  );
+  const monacoTheme = useMemo(() => {
+    const lightThemes = ["classic-light", "solarized", "pink", "blue"];
+    return lightThemes.includes(theme) ? "xenon-light" : "xenon-dark";
+  }, [theme]);
 
   const runCode = async () => {
     setConsoleLines([{ type: "sys", text: "Running your code..." }]);
@@ -182,10 +182,11 @@ export default function XenonIDE() {
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="xenon-panel h-[70vh] overflow-hidden p-3">
           <Editor
+            key={activeProject.id || "default"}
             beforeMount={buildMonacoTheme}
             height="100%"
             defaultLanguage="python"
-            value={activeProject.code}
+            defaultValue={activeProject.code}
             onChange={(value) => setActiveProjectCode(value || "")}
             theme={monacoTheme}
             options={{
