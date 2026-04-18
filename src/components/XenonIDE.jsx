@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
 import { getPyodide } from "../lib/pyodide";
@@ -26,13 +26,15 @@ const buildMonacoTheme = (monaco) => {
     rules: [],
     colors: {
       "editor.background": "#f7f9fc",
-      "editorCursor.foreground": "#386bff",
+      "editorCursor.foreground": "#1e3a6e",
       "editor.selectionBackground": "#dce7ff",
     },
   });
 };
 
 export default function XenonIDE() {
+  const editorRef = useRef(null);
+  const projectIdRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [showChallenge, setShowChallenge] = useState(false);
   const [challengeIndex, setChallengeIndex] = useState(0);
@@ -56,6 +58,21 @@ export default function XenonIDE() {
     const lightThemes = ["classic-light", "solarized", "pink", "blue"];
     return lightThemes.includes(theme) ? "xenon-light" : "xenon-dark";
   }, [theme]);
+
+  const handleEditorMount = (editor) => {
+    editorRef.current = editor;
+    projectIdRef.current = activeProject.id;
+  };
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    if (activeProject.id === projectIdRef.current) return;
+    projectIdRef.current = activeProject.id;
+    const current = editorRef.current.getValue();
+    if (current !== activeProject.code) {
+      editorRef.current.setValue(activeProject.code);
+    }
+  }, [activeProject.id, activeProject.code]);
 
   const runCode = async () => {
     setConsoleLines([{ type: "sys", text: "Running your code..." }]);
@@ -182,8 +199,8 @@ export default function XenonIDE() {
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="xenon-panel h-[70vh] overflow-hidden p-3">
           <Editor
-            key={activeProject.id || "default"}
             beforeMount={buildMonacoTheme}
+            onMount={handleEditorMount}
             height="100%"
             defaultLanguage="python"
             defaultValue={activeProject.code}

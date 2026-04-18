@@ -118,22 +118,47 @@ export default function ClassDashboard() {
             </div>
             <div className="mt-4 space-y-3">
               {(cls.leaderboard || cls.class_members || [])
-                .map((member, index) => (
-                  <div key={member.student_id} className="xenon-panel-muted flex flex-wrap items-center justify-between gap-3 p-4">
-                    <div className="flex items-center gap-4">
-                      <span className="xenon-pill">#{member.rank || index + 1}</span>
-                      <div>
-                        <p className="font-semibold">{member.profiles?.first_name || member.profiles?.username || "Student"}</p>
-                        <p className="text-sm text-[var(--muted)]">@{member.profiles?.username || "unknown"}</p>
+                .map((member, index) => {
+                  const rank = member.rank || index + 1;
+                  const medal =
+                    rank === 1 ? { icon: "🥇", label: "1st Place", bg: "rgba(255,215,0,0.12)", border: "rgba(255,190,0,0.45)", text: "#8a6000" } :
+                    rank === 2 ? { icon: "🥈", label: "2nd Place", bg: "rgba(192,192,192,0.14)", border: "rgba(160,160,160,0.5)", text: "#5a5a5a" } :
+                    rank === 3 ? { icon: "🥉", label: "3rd Place", bg: "rgba(205,127,50,0.14)", border: "rgba(180,100,30,0.45)", text: "#7a4a10" } :
+                    null;
+                  return (
+                    <div
+                      key={member.student_id}
+                      className="xenon-panel-muted flex flex-wrap items-center justify-between gap-3 p-4"
+                      style={medal ? { borderColor: medal.border, background: medal.bg } : undefined}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          {medal ? (
+                            <span className="text-2xl leading-none" title={medal.label}>{medal.icon}</span>
+                          ) : (
+                            <span className="xenon-pill">#{rank}</span>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold">{member.profiles?.first_name || member.profiles?.username || "Student"}</p>
+                            {medal && (
+                              <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
+                                {medal.label}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-[var(--muted)]">@{member.profiles?.username || "unknown"}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        <span className="xenon-badge">{member.practice_questions_correct || 0} correct</span>
+                        <span className="xenon-badge">{member.total_projects || 0} projects</span>
+                        <span className="xenon-badge">{formatPracticeTime(member.total_time_seconds || 0)}</span>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-3 text-sm">
-                      <span className="xenon-badge">{member.practice_questions_correct || 0} correct</span>
-                      <span className="xenon-badge">{member.total_projects || 0} projects</span>
-                      <span className="xenon-badge">{formatPracticeTime(member.total_time_seconds || 0)}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           </div>
 
