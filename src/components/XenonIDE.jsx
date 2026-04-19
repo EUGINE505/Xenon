@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
-import { getPyodide } from "../lib/pyodide";
+import { getPyodideWorker, sendInputToWorker } from "../lib/pyodide";
 import { translatePythonError } from "../lib/errorTranslator";
 import { useAppStore } from "../store/useAppStore";
 import { GCSE_QUESTIONS } from "../lib/gcseQuestions";
@@ -38,6 +38,12 @@ export default function XenonIDE() {
   const [saveStatus, setSaveStatus] = useState("");
   const [showChallenge, setShowChallenge] = useState(false);
   const [challengeIndex, setChallengeIndex] = useState(0);
+  const [variables, setVariables] = useState([]);
+  const [showVariables, setShowVariables] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isWaitingForInput, setIsWaitingForInput] = useState(false);
+  const [terminalInput, setTerminalInput] = useState("");
+  const terminalEndRef = useRef(null);
   const {
     activeProject,
     enrolledClass,
@@ -65,6 +71,10 @@ export default function XenonIDE() {
   };
 
   useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [consoleLines, isWaitingForInput]);
+
+  useEffect(() => {
     if (!editorRef.current) return;
     if (activeProject.id === projectIdRef.current) return;
     projectIdRef.current = activeProject.id;
@@ -74,28 +84,69 @@ export default function XenonIDE() {
     }
   }, [activeProject.id, activeProject.code]);
 
+  const handleTerminalSubmit = (e) => {
+    if (e.key === "Enter" && isWaitingForInput) {
+      const value = terminalInput;
+      appendConsoleLine({ type: "in", text: value });
+      sendInputToWorker(value);
+      setTerminalInput("");
+      setIsWaitingForInput(false);
+    }
+  };
+
   const runCode = async () => {
-    setConsoleLines([{ type: "sys", text: "Running your code..." }]);
+    if (isRunning) return;
+    setIsRunning(true);
+    setConsoleLines([{ type: "sys", text: "Starting Python worker..." }]);
+
     try {
-      const pyodide = await getPyodide();
-      const output = [];
-      await pyodide.runPythonAsync("import random");
-      pyodide.setStdout({ batched: (text) => output.push({ type: "out", text }) });
-      pyodide.setStderr({
-        batched: (text) =>
-          output.push({
-            type: "err",
-            text: profile?.role === "student" ? translatePythonError(text) : text,
-          }),
-      });
-      await pyodide.runPythonAsync(activeProject.code);
-      setConsoleLines(output.length ? output : [{ type: "sys", text: "(no output)" }]);
+      const { worker, sab } = getPyodideWorker();
+
+      const handleMessage = (e) => {
+        const { type, text, variables: newVars, error } = e.data;
+
+        switch (type) {
+          case "stdout":
+            appendConsoleLine({ type: "out", text });
+            break;
+          case "stderr":
+            appendConsoleLine({
+              type: "err",
+              text: profile?.role === "student" ? translatePythonError(text) : text,
+            });
+            break;
+          case "stdin_request":
+            setIsWaitingForInput(true);
+            break;
+          case "done":
+            setVariables(newVars || []);
+            setIsRunning(false);
+            worker.removeEventListener("message", handleMessage);
+            break;
+          case "error":
+            appendConsoleLine({
+              type: "err",
+              text: profile?.role === "student" ? translatePythonError(error) : error,
+            });
+            setIsRunning(false);
+            worker.removeEventListener("message", handleMessage);
+            break;
+          case "ready":
+            setConsoleLines([{ type: "sys", text: "Worker ready. Running code..." }]);
+            worker.postMessage({ type: "run", code: activeProject.code, sab });
+            break;
+          default:
+            break;
+        }
+      };
+
+      worker.addEventListener("message", handleMessage);
+      
+      // If worker is already ready, it won't send 'ready' again, so we just run
+      worker.postMessage({ type: "run", code: activeProject.code, sab });
     } catch (error) {
-      const rawError = String(error);
-      appendConsoleLine({
-        type: "err",
-        text: profile?.role === "student" ? translatePythonError(rawError) : rawError,
-      });
+      setIsRunning(false);
+      appendConsoleLine({ type: "err", text: "Worker Error: " + String(error) });
     }
   };
 
@@ -150,7 +201,10 @@ export default function XenonIDE() {
             <p className="mt-2 text-sm text-[var(--muted)]">Write code on the left and see the result on the right.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="xenon-btn" onClick={runCode}>Run Code</button>
+            <button className="xenon-btn" onClick={runCode} disabled={isRunning}>
+              {isRunning ? "Running..." : "Run Code"}
+            </button>
+            <button className="xenon-btn-ghost" onClick={() => setShowVariables((v) => !v)}>Variables</button>
             <button className="xenon-btn-ghost" onClick={onSave}>Save</button>
             <button className="xenon-btn-ghost" onClick={newProject}>New Project</button>
             <button className="xenon-btn-subtle" onClick={() => setShowChallenge((value) => !value)}>Challenges</button>
@@ -225,18 +279,80 @@ export default function XenonIDE() {
                 <p
                   key={`${line.text}-${index}`}
                   className={`xenon-code mb-2 whitespace-pre-wrap text-sm ${
-                    line.type === "err" ? "text-red-300" : line.type === "sys" ? "text-sky-300" : "text-green-300"
+                    line.type === "err"
+                      ? "text-red-300"
+                      : line.type === "sys"
+                        ? "text-sky-300"
+                        : line.type === "in"
+                          ? "text-amber-200 font-bold"
+                          : "text-green-300"
                   }`}
                 >
-                  {line.text}
+                  {line.type === "in" ? `> ${line.text}` : line.text}
                 </p>
               ))
             ) : (
               <p className="text-sm text-[var(--muted)]">Run your code to see output here.</p>
             )}
+
+            {isWaitingForInput && (
+              <div className="flex items-center gap-2 text-sm font-bold text-amber-200">
+                <span>&gt;</span>
+                <input
+                  autoFocus
+                  className="w-full bg-transparent outline-none ring-0 placeholder:text-amber-200/50"
+                  placeholder="Type here..."
+                  value={terminalInput}
+                  onChange={(e) => setTerminalInput(e.target.value)}
+                  onKeyDown={handleTerminalSubmit}
+                />
+              </div>
+            )}
+            <div ref={terminalEndRef} />
           </div>
         </section>
       </div>
+
+      {showVariables && (
+        <motion.section
+          className="xenon-panel p-6"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Variable Explorer</h3>
+            <button className="text-sm text-[var(--muted)] hover:text-white" onClick={() => setShowVariables(false)}>Close</button>
+          </div>
+          <p className="mt-1 text-sm text-[var(--muted)]">Inspect the current value and type of your variables after execution.</p>
+          
+          <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[var(--panel-muted)] text-[var(--muted)]">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Name</th>
+                  <th className="px-4 py-2 font-medium">Type</th>
+                  <th className="px-4 py-2 font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {variables.length > 0 ? (
+                  variables.map((v) => (
+                    <tr key={v.name} className="hover:bg-white/5">
+                      <td className="px-4 py-2 font-mono text-sky-300">{v.name}</td>
+                      <td className="px-4 py-2"><span className="xenon-badge text-[10px] uppercase opacity-70">{v.type}</span></td>
+                      <td className="px-4 py-2 font-mono text-[var(--muted)] truncate max-w-xs" title={v.value}>{v.value}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-8 text-center text-[var(--muted)]">Run code to populate variables.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </motion.section>
+      )}
     </div>
   );
 }

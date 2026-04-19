@@ -7,6 +7,11 @@ create table profiles (
   first_name text not null,
   username text not null unique,
   role role_type not null default 'none',
+  avatar_url text not null default '',
+  headline text not null default '',
+  about_me text not null default '',
+  favorite_topic text not null default '',
+  profile_visibility boolean not null default true,
   has_seen_init boolean not null default false,
   joined_app timestamptz not null default now(),
   created_at timestamptz not null default now()
@@ -102,3 +107,127 @@ execute function enforce_role_immutability();
 create index idx_projects_owner_updated on projects(owner_id, updated_at desc);
 create index idx_classes_teacher on classes(teacher_id);
 create index idx_class_members_student on class_members(student_id);
+
+create table if not exists class_announcements (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references classes(id) on delete cascade,
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table class_announcements enable row level security;
+
+create policy "Teachers manage their own announcements"
+on class_announcements for all
+using (teacher_id = auth.uid())
+with check (teacher_id = auth.uid());
+
+create policy "Students read announcements for their class"
+on class_announcements for select
+using (
+  class_id in (
+    select class_id from class_members where student_id = auth.uid()
+  )
+);
+
+create table if not exists class_assignments (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references classes(id) on delete cascade,
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  title text not null,
+  description text not null default '',
+  question_goal integer,
+  due_date date,
+  created_at timestamptz not null default now()
+);
+
+alter table class_assignments enable row level security;
+
+create policy "Teachers manage their own assignments"
+on class_assignments for all
+using (teacher_id = auth.uid())
+with check (teacher_id = auth.uid());
+
+create policy "Students read assignments for their class"
+on class_assignments for select
+using (
+  class_id in (
+    select class_id from class_members where student_id = auth.uid()
+  )
+);
+
+create table if not exists assignment_submissions (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid not null references class_assignments(id) on delete cascade,
+  class_id uuid not null references classes(id) on delete cascade,
+  student_id uuid not null references profiles(id) on delete cascade,
+  notes text not null default '',
+  submitted_at timestamptz not null default now(),
+  unique (assignment_id, student_id)
+);
+
+alter table assignment_submissions enable row level security;
+
+create policy "Students manage their own submissions"
+on assignment_submissions for all
+using (student_id = auth.uid())
+with check (student_id = auth.uid());
+
+create policy "Teachers read submissions for their assignments"
+on assignment_submissions for select
+using (
+  assignment_id in (
+    select id from class_assignments where teacher_id = auth.uid()
+  )
+);
+
+create table if not exists user_achievements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references profiles(id) on delete cascade,
+  achievement_key text not null,
+  earned_at timestamptz not null default now(),
+  unique (user_id, achievement_key)
+);
+
+alter table user_achievements enable row level security;
+
+create policy "Users read their own achievements"
+on user_achievements for select
+using (user_id = auth.uid());
+
+create policy "Users insert their own achievements"
+on user_achievements for insert
+with check (user_id = auth.uid());
+
+create table if not exists friendships (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references profiles(id) on delete cascade,
+  addressee_id uuid not null references profiles(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  check (requester_id <> addressee_id)
+);
+
+create unique index if not exists idx_friendships_pair
+on friendships (least(requester_id, addressee_id), greatest(requester_id, addressee_id));
+
+alter table friendships enable row level security;
+
+create policy "Students can view their friendships"
+on friendships for select
+using (requester_id = auth.uid() or addressee_id = auth.uid());
+
+create policy "Students can send friend requests"
+on friendships for insert
+with check (requester_id = auth.uid());
+
+create policy "Students can respond to their friendships"
+on friendships for update
+using (requester_id = auth.uid() or addressee_id = auth.uid())
+with check (requester_id = auth.uid() or addressee_id = auth.uid());
+
+create policy "Students can remove their friendships"
+on friendships for delete
+using (requester_id = auth.uid() or addressee_id = auth.uid());

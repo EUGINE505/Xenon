@@ -8,8 +8,12 @@ import XenonIDE from "./components/XenonIDE";
 import SettingsPanel from "./components/SettingsPanel";
 import ClassDashboard from "./components/ClassDashboard";
 import ParsonsProblem from "./components/ParsonsProblem";
+import ChallengeArena from "./components/ChallengeArena";
 import TheoryComingSoon from "./components/TheoryComingSoon";
 import SiteFooter from "./components/SiteFooter";
+import ProfileAvatar from "./components/ProfileAvatar";
+import AchievementsPanel from "./components/AchievementsPanel";
+import { getLevelProgress, getRankBadge } from "./lib/progression";
 import { useAppStore } from "./store/useAppStore";
 
 const motionProps = {
@@ -17,12 +21,6 @@ const motionProps = {
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -8 },
   transition: { duration: 0.18, ease: "easeOut" },
-};
-
-const roleStyles = {
-  teacher: "border-amber-400/30 bg-amber-400/10 text-amber-200",
-  student: "border-cyan-400/30 bg-cyan-400/10 text-cyan-200",
-  none: "border-white/15 bg-white/5 text-[var(--muted)]",
 };
 
 const formatPracticeTime = (seconds = 0) => {
@@ -37,7 +35,7 @@ const formatPracticeTime = (seconds = 0) => {
 const LOAD_HINTS = [
   { after: 2500, text: "Checking your account details..." },
   { after: 5000, text: "If you just signed up, please check your email and click the verification link." },
-  { after: 9000, text: "Still loading — this is taking longer than usual." },
+  { after: 9000, text: "Still loading - this is taking longer than usual." },
   { after: 13000, text: "If you have not verified your email yet, look for a message from Xenon Code in your inbox." },
   { after: 18000, text: "Account not found or session expired. Try refreshing the page or signing in again." },
 ];
@@ -46,9 +44,7 @@ function LoadingScreen() {
   const [hint, setHint] = useState(null);
 
   useEffect(() => {
-    const timers = LOAD_HINTS.map(({ after, text }) =>
-      setTimeout(() => setHint(text), after)
-    );
+    const timers = LOAD_HINTS.map(({ after, text }) => setTimeout(() => setHint(text), after));
     return () => timers.forEach(clearTimeout);
   }, []);
 
@@ -66,37 +62,32 @@ function LoadingScreen() {
             />
           ))}
         </div>
-        {hint && (
-          <p className="mt-6 text-xs leading-relaxed text-[var(--muted)]">{hint}</p>
-        )}
+        {hint ? <p className="mt-6 text-xs leading-relaxed text-[var(--muted)]">{hint}</p> : null}
       </div>
     </div>
   );
 }
 
-function HomeView({ profile, enrolledClass, projectsCount, onNavigate }) {
+function HomeView({ profile, enrolledClass, projectsCount, challengeCount, onNavigate }) {
+  const levelProgress = getLevelProgress(profile?.experience_points || 0);
+  const rankBadge = getRankBadge(enrolledClass?.rank);
   return (
     <motion.section className="space-y-4" {...motionProps}>
-      <div className="xenon-panel p-6 sm:p-8">
-        <span className="xenon-pill">Welcome to Xenon Code</span>
-        <h1 className="xenon-section-title mt-5 font-bold">A simple place to learn Python in your browser.</h1>
+      <div className="xenon-hero-panel p-6 sm:p-8">
+        <span className="xenon-pill">School Workspace</span>
+        <h1 className="xenon-section-title mt-5 font-bold">A brighter classroom for Python practice, projects, and class progress.</h1>
         <p className="xenon-subtitle mt-4 max-w-2xl text-sm sm:text-base">
-          Write code, run it instantly, save your projects, and use guided activities made for GCSE learning.
+          Write code, run it instantly, save your projects, tackle a larger practice bank, and now challenge friends in 10-question Python showdowns.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          <button className="xenon-btn" onClick={() => onNavigate("code")}>
-            Open Code
-          </button>
-          <button className="xenon-btn-ghost" onClick={() => onNavigate("theory")}>
-            Open Theory
-          </button>
-          <button className="xenon-btn-ghost" onClick={() => onNavigate("projects")}>
-            View Saved Projects
-          </button>
+          <button className="xenon-btn" onClick={() => onNavigate("code")}>Open Code</button>
+          <button className="xenon-btn-ghost" onClick={() => onNavigate("theory")}>Open Theory</button>
+          <button className="xenon-btn-ghost" onClick={() => onNavigate("projects")}>View Saved Projects</button>
+          {profile?.role === "student" ? <button className="xenon-btn-ghost" onClick={() => onNavigate("challenge")}>Open 1v1</button> : null}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="xenon-panel p-5">
           <p className="xenon-kicker">Your Role</p>
           <p className="mt-3 text-xl font-semibold capitalize">{profile?.role || "none"}</p>
@@ -114,13 +105,21 @@ function HomeView({ profile, enrolledClass, projectsCount, onNavigate }) {
           <p className="mt-2 text-sm text-[var(--muted)]">Your code files are saved here so you can come back later.</p>
         </div>
         <div className="xenon-panel p-5">
+          <p className="xenon-kicker">Level Progress</p>
+          <p className="mt-3 text-xl font-semibold">Level {levelProgress.level}</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">{profile?.experience_points || 0} XP total</p>
+          <div className="challenge-progress-track mt-4">
+            <span style={{ width: `${levelProgress.percent}%` }} />
+          </div>
+        </div>
+        <div className="xenon-panel p-5">
           <p className="xenon-kicker">Class Status</p>
-          <p className="mt-3 text-xl font-semibold">
-            {enrolledClass ? enrolledClass.name : "Not connected"}
-          </p>
+          <p className="mt-3 text-xl font-semibold">{enrolledClass ? enrolledClass.name : "Not connected"}</p>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            {enrolledClass ? `Class code: ${enrolledClass.class_code}` : "Connect to a class from Settings."}
+            {enrolledClass ? `Class code: ${enrolledClass.class_code}` : "Connect to a class from the Settings button in the header."}
           </p>
+          {rankBadge ? <span className="xenon-badge mt-3">{rankBadge.icon} {rankBadge.label}</span> : null}
+          {profile?.role === "student" ? <p className="mt-2 text-xs text-[var(--muted)]">{challengeCount} challenge{challengeCount === 1 ? "" : "s"} in your feed</p> : null}
         </div>
       </div>
     </motion.section>
@@ -168,12 +167,8 @@ function SavedProjects({ onOpenIde }) {
               }}
             >
               <h3 className="font-semibold">{project.title}</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                {new Date(project.updated_at).toLocaleString()}
-              </p>
-              <pre className="xenon-code mt-3 overflow-hidden text-xs text-[var(--muted)]">
-                {project.snippet || "# Empty file"}
-              </pre>
+              <p className="mt-1 text-xs text-[var(--muted)]">{new Date(project.updated_at).toLocaleString()}</p>
+              <pre className="xenon-code mt-3 overflow-hidden text-xs text-[var(--muted)]">{project.snippet || "# Empty file"}</pre>
             </button>
           ))}
         </div>
@@ -182,20 +177,8 @@ function SavedProjects({ onOpenIde }) {
   );
 }
 
-const ACHIEVEMENT_DEFS = {
-  first_project: { icon: "💻", label: "First Project", desc: "Saved your first project" },
-  joined_class:  { icon: "🏫", label: "Class Member",  desc: "Joined a class" },
-  skills_5:      { icon: "⭐", label: "Getting Started", desc: "5 practice questions correct" },
-  skills_25:     { icon: "🌟", label: "Practice Pro",   desc: "25 practice questions correct" },
-  skills_100:    { icon: "🏆", label: "Master Coder",   desc: "100 practice questions correct" },
-  streak_3:      { icon: "🔥", label: "On a Roll",      desc: "3-day login streak" },
-  streak_7:      { icon: "⚡", label: "Week Warrior",   desc: "7-day login streak" },
-  top_3:         { icon: "🎖️", label: "Top 3",          desc: "Reached top 3 in your class" },
-  top_1:         { icon: "👑", label: "Class Champion", desc: "Reached rank #1 in your class" },
-};
-
 function StudentClassView() {
-  const { enrolledClass, announcements, assignments, achievements, streak, submitAssignment } = useAppStore();
+  const { enrolledClass, announcements, assignments, streak, submitAssignment } = useAppStore();
   const [submittedIds, setSubmittedIds] = useState(new Set());
   const [submittingId, setSubmittingId] = useState(null);
   const [noteMap, setNoteMap] = useState({});
@@ -209,8 +192,6 @@ function StudentClassView() {
     setSubmittingId(null);
   };
 
-  const earnedKeys = new Set((achievements || []).map((a) => a.achievement_key));
-  const allAchievements = Object.entries(ACHIEVEMENT_DEFS);
   const MEDALS = {
     1: { icon: "🥇", label: "1st Place", bg: "rgba(255,215,0,0.12)", border: "rgba(255,190,0,0.45)", text: "#8a6000" },
     2: { icon: "🥈", label: "2nd Place", bg: "rgba(192,192,192,0.14)", border: "rgba(160,160,160,0.5)", text: "#5a5a5a" },
@@ -219,15 +200,13 @@ function StudentClassView() {
 
   return (
     <motion.section className="space-y-4" {...motionProps}>
-
-      {/* Streak + Achievements */}
       <div className="xenon-panel p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold">My Class</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Your progress, achievements, and class activity.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Your class activity, ranking, assignments, and updates.</p>
           </div>
-          {(streak?.current || 0) > 0 && (
+          {(streak?.current || 0) > 0 ? (
             <div className="xenon-panel-muted flex items-center gap-3 p-4">
               <span className="text-3xl leading-none">{streak.current >= 7 ? "⚡" : "🔥"}</span>
               <div>
@@ -235,30 +214,7 @@ function StudentClassView() {
                 <p className="text-xs text-[var(--muted)]">Longest: {streak.longest} days</p>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Achievements grid */}
-        <div className="mt-5">
-          <p className="xenon-kicker mb-3">Achievements ({earnedKeys.size}/{allAchievements.length})</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {allAchievements.map(([key, def]) => {
-              const earned = earnedKeys.has(key);
-              return (
-                <div
-                  key={key}
-                  className="xenon-panel-muted flex flex-col items-center gap-1 p-4 text-center"
-                  style={earned ? { borderColor: "var(--accent)", background: "var(--accent-soft)" } : { opacity: 0.4 }}
-                  title={earned ? `Earned: ${def.desc}` : `Locked: ${def.desc}`}
-                >
-                  <span className="text-2xl leading-none">{def.icon}</span>
-                  <p className="text-xs font-semibold leading-tight">{def.label}</p>
-                  <p className="text-xs text-[var(--muted)] leading-tight">{def.desc}</p>
-                  {earned && <span className="mt-1 text-xs font-bold text-[var(--accent)]">Earned</span>}
-                </div>
-              );
-            })}
-          </div>
+          ) : null}
         </div>
       </div>
 
@@ -268,7 +224,6 @@ function StudentClassView() {
         </div>
       ) : (
         <>
-          {/* Class stats */}
           <div className="xenon-panel p-6">
             <h3 className="text-lg font-semibold">Class Overview</h3>
             <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -304,73 +259,71 @@ function StudentClassView() {
             </div>
           </div>
 
-          {/* Announcements */}
-          {announcements.length > 0 && (
+          {announcements.length > 0 ? (
             <div className="xenon-panel p-6">
               <h3 className="text-lg font-semibold">Announcements</h3>
               <div className="mt-4 space-y-3">
-                {announcements.map((a) => (
-                  <div key={a.id} className="xenon-panel-muted p-4" style={{ borderLeft: "3px solid var(--accent)" }}>
-                    <p className="text-sm leading-relaxed">{a.message}</p>
-                    <p className="mt-2 text-xs text-[var(--muted)]">{new Date(a.created_at).toLocaleString()}</p>
+                {announcements.map((announcement) => (
+                  <div key={announcement.id} className="xenon-panel-muted p-4" style={{ borderLeft: "3px solid var(--accent)" }}>
+                    <p className="text-sm leading-relaxed">{announcement.message}</p>
+                    <p className="mt-2 text-xs text-[var(--muted)]">{new Date(announcement.created_at).toLocaleString()}</p>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
-          {/* Assignments */}
-          {assignments.length > 0 && (
+          {assignments.length > 0 ? (
             <div className="xenon-panel p-6">
               <h3 className="text-lg font-semibold">Assignments</h3>
               <div className="mt-4 space-y-4">
-                {assignments.map((a) => {
-                  const done = submittedIds.has(a.id);
-                  const submitting = submittingId === a.id;
-                  const isOverdue = a.due_date && new Date(a.due_date) < new Date();
+                {assignments.map((assignment) => {
+                  const done = submittedIds.has(assignment.id);
+                  const submitting = submittingId === assignment.id;
+                  const isOverdue = assignment.due_date && new Date(assignment.due_date) < new Date();
                   return (
-                    <div key={a.id} className="xenon-panel-muted p-5">
+                    <div key={assignment.id} className="xenon-panel-muted p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold">{a.title}</p>
-                          <p className="mt-1 text-sm text-[var(--muted)]">{a.description}</p>
-                          {a.due_date && (
-                            <p className={clsx("mt-1 text-xs font-semibold", isOverdue ? "text-red-500" : "text-[var(--muted)]")}>
-                              Due: {new Date(a.due_date).toLocaleDateString()} {isOverdue ? "(overdue)" : ""}
+                          <p className="font-semibold">{assignment.title}</p>
+                          <p className="mt-1 text-sm text-[var(--muted)]">{assignment.description}</p>
+                          {assignment.question_goal ? (
+                            <p className="mt-2 text-xs font-semibold text-[var(--accent)]">
+                              Practice target: complete {assignment.question_goal} questions in the Practice tab
                             </p>
-                          )}
+                          ) : null}
+                          {assignment.due_date ? (
+                            <p className={clsx("mt-1 text-xs font-semibold", isOverdue ? "text-red-500" : "text-[var(--muted)]")}>
+                              Due: {new Date(assignment.due_date).toLocaleDateString()} {isOverdue ? "(overdue)" : ""}
+                            </p>
+                          ) : null}
                         </div>
                         {done ? (
                           <span className="xenon-badge" style={{ borderColor: "var(--success)", color: "var(--success)", background: "rgba(26,110,62,0.1)" }}>
                             Submitted
                           </span>
                         ) : (
-                          <button
-                            className="xenon-btn"
-                            disabled={submitting}
-                            onClick={() => handleSubmit(a.id)}
-                          >
+                          <button className="xenon-btn" disabled={submitting} onClick={() => handleSubmit(assignment.id)}>
                             {submitting ? "Submitting..." : "Mark as Submitted"}
                           </button>
                         )}
                       </div>
-                      {!done && (
+                      {!done ? (
                         <textarea
                           className="xenon-input mt-3 w-full resize-none text-sm"
                           rows={2}
                           placeholder="Optional: add a note to your teacher..."
-                          value={noteMap[a.id] || ""}
-                          onChange={(e) => setNoteMap((prev) => ({ ...prev, [a.id]: e.target.value }))}
+                          value={noteMap[assignment.id] || ""}
+                          onChange={(event) => setNoteMap((prev) => ({ ...prev, [assignment.id]: event.target.value }))}
                         />
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
               </div>
             </div>
-          )}
+          ) : null}
 
-          {/* Leaderboard */}
           <div className="xenon-panel p-6">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-lg font-semibold">Class Leaderboard</h3>
@@ -378,8 +331,7 @@ function StudentClassView() {
             </div>
             <div className="mt-4 space-y-3">
               {(enrolledClass.leaderboard || []).map((entry) => {
-                const rank = entry.rank;
-                const medal = MEDALS[rank] || null;
+                const medal = MEDALS[entry.rank] || null;
                 return (
                   <div
                     key={entry.student_id}
@@ -387,19 +339,16 @@ function StudentClassView() {
                     style={medal ? { borderColor: medal.border, background: medal.bg } : undefined}
                   >
                     <div className="flex items-center gap-4">
-                      {medal ? (
-                        <span className="text-2xl leading-none">{medal.icon}</span>
-                      ) : (
-                        <span className="xenon-pill">#{rank}</span>
-                      )}
+                      {medal ? <span className="text-2xl leading-none">{medal.icon}</span> : <span className="xenon-pill">#{entry.rank}</span>}
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-semibold">{entry.profiles?.first_name || entry.profiles?.username || "Student"}</p>
-                          {medal && (
-                            <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
+                          {medal ? (
+                            <span className="rounded px-1.5 py-0.5 text-xs font-bold" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
                               {medal.label}
                             </span>
-                          )}
+                          ) : null}
+                          <span className="xenon-badge">Lvl {entry.profiles?.level || 1}</span>
                         </div>
                         <p className="text-sm text-[var(--muted)]">@{entry.profiles?.username || "unknown"}</p>
                       </div>
@@ -420,6 +369,21 @@ function StudentClassView() {
   );
 }
 
+function AchievementsView() {
+  const { achievements, databaseWarnings, profile } = useAppStore();
+
+  return (
+    <motion.div {...motionProps}>
+      <AchievementsPanel
+        title="Achievements"
+        subtitle={profile?.role === "student" ? "Your milestones, streak awards, and classroom badges." : "Sign in as a student to unlock classroom achievements."}
+        achievements={achievements}
+        warning={databaseWarnings.achievements}
+      />
+    </motion.div>
+  );
+}
+
 export default function App() {
   const {
     user,
@@ -427,6 +391,7 @@ export default function App() {
     authHydrated,
     enrolledClass,
     projects,
+    friendChallenges,
     showInitOverlay,
     showProfileSetup,
     bootstrap,
@@ -437,6 +402,7 @@ export default function App() {
     cleanupAuthListener,
     signOut,
     streak,
+    databaseWarnings,
   } = useAppStore();
   const [tab, setTab] = useState("home");
 
@@ -464,38 +430,27 @@ export default function App() {
     { id: "theory", label: "Theory" },
     { id: "projects", label: "Projects" },
     { id: "parsons", label: "Practise Python Skills" },
-    { id: "settings", label: "Settings" },
+    ...(profile?.role === "student" ? [{ id: "challenge", label: "1v1 Showdown" }] : []),
+    ...(profile?.role === "student" ? [{ id: "achievements", label: "Achievements" }] : []),
     ...(profile?.role === "teacher" ? [{ id: "class", label: "Classes" }] : []),
     ...(profile?.role === "student" ? [{ id: "view-class", label: "My Class" }] : []),
   ];
 
-  if (!authHydrated) {
-    return <LoadingScreen />;
-  }
-
+  if (!authHydrated) return <LoadingScreen />;
   if (!user) return <AuthGate initialMode="landing" />;
 
   const studentRank = profile?.role === "student" ? enrolledClass?.rank : null;
-  const rankMedal =
-    studentRank === 1 ? "🥇" :
-    studentRank === 2 ? "🥈" :
-    studentRank === 3 ? "🥉" : null;
-
+  const rankBadge = getRankBadge(studentRank);
+  const levelProgress = getLevelProgress(profile?.experience_points || 0);
   const displayName = profile?.first_name || profile?.username || "User";
-  const avatarInitials = displayName.slice(0, 2).toUpperCase();
 
   return (
     <div className="xenon-shell">
-      {showInitOverlay && <InitOverlay />}
-      {showProfileSetup && <ProfileSetupModal />}
+      {showInitOverlay ? <InitOverlay /> : null}
+      {showProfileSetup ? <ProfileSetupModal /> : null}
 
-      <motion.header
-        className="xenon-header sticky top-0 z-30"
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <motion.header className="xenon-header sticky top-0 z-30" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
         <div className="mx-auto max-w-screen-xl px-4 md:px-6">
-          {/* Top row: logo + user info */}
           <div className="flex items-center justify-between gap-4 py-3">
             <div className="flex items-center gap-3">
               <img src="/xenon-logo.svg" alt="Xenon Code logo" className="h-9 w-9 rounded-lg" />
@@ -506,37 +461,31 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3">
-              {(streak?.current || 0) >= 2 && (
-                <span className="xenon-badge hidden sm:inline-flex items-center gap-1" title={`${streak.current}-day login streak`}>
+              {(streak?.current || 0) >= 2 ? (
+                <span className="xenon-badge hidden items-center gap-1 sm:inline-flex" title={`${streak.current}-day login streak`}>
                   {streak.current >= 7 ? "⚡" : "🔥"} {streak.current}d
                 </span>
-              )}
-              {rankMedal && (
-                <span className="text-xl leading-none" title={`Rank #${studentRank} in your class`}>{rankMedal}</span>
-              )}
+              ) : null}
+              <span className="xenon-badge hidden sm:inline-flex">Lvl {levelProgress.level}</span>
+              {rankBadge ? <span className="text-xl leading-none" title={`Rank #${studentRank} in your class`}>{rankBadge.icon}</span> : null}
               <div className="flex items-center gap-2">
-                <span className="xenon-avatar">{avatarInitials}</span>
-                <div className="hidden sm:block text-right">
+                <ProfileAvatar name={displayName} avatarUrl={profile?.avatar_url} size="md" />
+                <div className="hidden text-right sm:block">
                   <p className="text-sm font-semibold leading-tight">{displayName}</p>
-                  <p className="text-xs text-[var(--muted)] leading-tight capitalize">
+                  <p className="text-xs capitalize leading-tight text-[var(--muted)]">
                     {profile?.role || "no role"}
                     {studentRank ? ` · Rank #${studentRank}` : ""}
                   </p>
                 </div>
               </div>
+              <button className="xenon-btn-subtle text-sm" onClick={() => setTab("settings")}>Settings</button>
               <button className="xenon-btn-ghost text-sm" onClick={signOut}>Sign Out</button>
             </div>
           </div>
 
-          {/* Bottom row: nav tabs */}
           <div className="flex gap-1 overflow-x-auto pb-0" style={{ borderTop: "1px solid var(--border)" }}>
             {navigation.map((item) => (
-              <button
-                key={item.id}
-                className="xenon-nav-tab"
-                data-active={tab === item.id}
-                onClick={() => setTab(item.id)}
-              >
+              <button key={item.id} className="xenon-nav-tab" data-active={tab === item.id} onClick={() => setTab(item.id)}>
                 {item.label}
               </button>
             ))}
@@ -545,23 +494,26 @@ export default function App() {
       </motion.header>
 
       <div className="mx-auto max-w-screen-xl px-4 py-5 md:px-6">
+        {Object.keys(databaseWarnings || {}).length > 0 ? (
+          <div className="xenon-panel mb-4 border-amber-400/30 bg-amber-500/10 p-4">
+            <p className="text-sm font-semibold text-amber-200">Database setup still needs one Supabase migration.</p>
+            <p className="mt-1 text-sm text-amber-100/90">
+              Run the SQL in <code>supabase_migrations.sql</code>, then refresh. Until then, announcements, assignment targets, friend challenges, and student progression may stay unavailable.
+            </p>
+          </div>
+        ) : null}
+
         <AnimatePresence mode="wait">
-          {tab === "home" && (
-            <HomeView
-              key="home"
-              profile={profile}
-              enrolledClass={enrolledClass}
-              projectsCount={projects.length}
-              onNavigate={setTab}
-            />
-          )}
-          {tab === "code" && <motion.div key="code" {...motionProps}><XenonIDE /></motion.div>}
-          {tab === "theory" && <motion.div key="theory" {...motionProps}><TheoryComingSoon /></motion.div>}
-          {tab === "projects" && <SavedProjects key="projects" onOpenIde={() => setTab("code")} />}
-          {tab === "parsons" && <motion.div key="parsons" {...motionProps}><ParsonsProblem /></motion.div>}
-          {tab === "settings" && <motion.div key="settings" {...motionProps}><SettingsPanel /></motion.div>}
-          {tab === "class" && profile?.role === "teacher" && <motion.div key="class" {...motionProps}><ClassDashboard /></motion.div>}
-          {tab === "view-class" && profile?.role === "student" && <StudentClassView key="view-class" />}
+          {tab === "home" ? <HomeView key="home" profile={profile} enrolledClass={enrolledClass} projectsCount={projects.length} challengeCount={friendChallenges.length} onNavigate={setTab} /> : null}
+          {tab === "code" ? <motion.div key="code" {...motionProps}><XenonIDE /></motion.div> : null}
+          {tab === "theory" ? <motion.div key="theory" {...motionProps}><TheoryComingSoon /></motion.div> : null}
+          {tab === "projects" ? <SavedProjects key="projects" onOpenIde={() => setTab("code")} /> : null}
+          {tab === "parsons" ? <motion.div key="parsons" {...motionProps}><ParsonsProblem /></motion.div> : null}
+          {tab === "challenge" && profile?.role === "student" ? <motion.div key="challenge" {...motionProps}><ChallengeArena /></motion.div> : null}
+          {tab === "achievements" && profile?.role === "student" ? <AchievementsView key="achievements" /> : null}
+          {tab === "settings" ? <motion.div key="settings" {...motionProps}><SettingsPanel /></motion.div> : null}
+          {tab === "class" && profile?.role === "teacher" ? <motion.div key="class" {...motionProps}><ClassDashboard /></motion.div> : null}
+          {tab === "view-class" && profile?.role === "student" ? <StudentClassView key="view-class" /> : null}
         </AnimatePresence>
 
         <SiteFooter />

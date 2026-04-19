@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAppStore } from "../store/useAppStore";
 import { supabase } from "../lib/supabase";
+import { translateSupabaseError } from "../lib/errorTranslator";
 
 const formatPracticeTime = (seconds = 0) => {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -19,7 +20,7 @@ const MEDALS = {
 };
 
 function ClassAnnouncementsPanel({ cls }) {
-  const { postAnnouncement, deleteAnnouncement } = useAppStore();
+  const { postAnnouncement, deleteAnnouncement, databaseWarnings } = useAppStore();
   const [message, setMessage] = useState("");
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -29,10 +30,15 @@ function ClassAnnouncementsPanel({ cls }) {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from("class_announcements").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("class_announcements").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      if (error) throw error;
       setAnnouncements(data || []);
       setLoaded(true);
-    } catch { setLoaded(true); }
+      setErr("");
+    } catch (error) {
+      setErr(translateSupabaseError(error, "Could not load announcements."));
+      setLoaded(true);
+    }
     setLoading(false);
   };
 
@@ -71,6 +77,7 @@ function ClassAnnouncementsPanel({ cls }) {
         <button className="xenon-btn self-start" onClick={submit}>Post</button>
       </div>
       {err && <p className="text-sm text-red-500">{err}</p>}
+      {databaseWarnings.announcements && <p className="text-sm text-amber-400">{databaseWarnings.announcements}</p>}
       {!announcements.length ? (
         <p className="text-sm text-[var(--muted)]">No announcements yet.</p>
       ) : (
@@ -91,10 +98,11 @@ function ClassAnnouncementsPanel({ cls }) {
 }
 
 function ClassAssignmentsPanel({ cls }) {
-  const { postAssignment, deleteAssignment, loadSubmissions } = useAppStore();
+  const { postAssignment, deleteAssignment, loadSubmissions, databaseWarnings } = useAppStore();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [questionGoal, setQuestionGoal] = useState("");
   const [assignments, setAssignments] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -106,10 +114,15 @@ function ClassAssignmentsPanel({ cls }) {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from("class_assignments").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("class_assignments").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      if (error) throw error;
       setAssignments(data || []);
       setLoaded(true);
-    } catch { setLoaded(true); }
+      setErr("");
+    } catch (error) {
+      setErr(translateSupabaseError(error, "Could not load assignments."));
+      setLoaded(true);
+    }
     setLoading(false);
   };
 
@@ -117,8 +130,8 @@ function ClassAssignmentsPanel({ cls }) {
     if (!title.trim() || !description.trim()) { setErr("Title and description are required."); return; }
     setErr("");
     try {
-      await postAssignment({ classId: cls.id, title, description, dueDate });
-      setTitle(""); setDescription(""); setDueDate("");
+      await postAssignment({ classId: cls.id, title, description, dueDate, questionGoal });
+      setTitle(""); setDescription(""); setDueDate(""); setQuestionGoal("");
       await load();
     } catch (e) { setErr(e?.message || "Could not post assignment."); }
   };
@@ -147,14 +160,15 @@ function ClassAssignmentsPanel({ cls }) {
   return (
     <div className="mt-4 space-y-4">
       <div className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <input className="xenon-input" placeholder="Assignment title" value={title} onChange={(e) => setTitle(e.target.value)} />
           <input className="xenon-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          <input className="xenon-input" type="number" min="1" placeholder="Question target" value={questionGoal} onChange={(e) => setQuestionGoal(e.target.value)} />
         </div>
         <textarea
           className="xenon-input w-full resize-none"
           rows={3}
-          placeholder="Describe the task for your students..."
+          placeholder="Describe the task for your students. You can also set how many practice questions they should complete."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -162,6 +176,7 @@ function ClassAssignmentsPanel({ cls }) {
           <button className="xenon-btn" onClick={submit}>Set Assignment</button>
         </div>
         {err && <p className="text-sm text-red-500">{err}</p>}
+        {databaseWarnings.assignments && <p className="text-sm text-amber-400">{databaseWarnings.assignments}</p>}
       </div>
 
       {!assignments.length ? (
@@ -174,6 +189,9 @@ function ClassAssignmentsPanel({ cls }) {
                 <div>
                   <p className="font-semibold">{a.title}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">{a.description}</p>
+                  {a.question_goal ? (
+                    <p className="mt-2 text-xs font-semibold text-[var(--accent)]">Question target: {a.question_goal}</p>
+                  ) : null}
                   {a.due_date && (
                     <p className="mt-1 text-xs text-[var(--muted)]">Due: {new Date(a.due_date).toLocaleDateString()}</p>
                   )}

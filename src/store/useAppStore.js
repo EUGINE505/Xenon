@@ -1,8 +1,17 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
 import { generateClassCode } from "../lib/classCode";
+import { PRACTICE_QUESTIONS } from "../lib/practiceQuestions";
+import { getChallengeXpBreakdown, getLevelFromXp } from "../lib/progression";
+import { isMissingSupabaseTableError, translateSupabaseError } from "../lib/errorTranslator";
 
 const THEMES = ["xenon-dark", "oled-black", "classic-light", "solarized", "pink", "blue"];
+const PROFILE_SELECT_FIELDS = "id, full_name, first_name, username, role, has_seen_init, joined_app, created_at, avatar_url, headline, about_me, favorite_topic, profile_visibility, experience_points, level";
+const FRIEND_PROFILE_FIELDS = "id, full_name, first_name, username, role, avatar_url, headline, about_me, favorite_topic, profile_visibility, joined_app, experience_points, level";
+const FRIENDSHIP_SELECT = `id, status, created_at, responded_at, requester_id, addressee_id, requester:profiles!friendships_requester_id_fkey(${FRIEND_PROFILE_FIELDS}), addressee:profiles!friendships_addressee_id_fkey(${FRIEND_PROFILE_FIELDS})`;
+const FRIENDSHIP_SELECT_FALLBACK = "id, status, created_at, responded_at, requester_id, addressee_id, requester:profiles!friendships_requester_id_fkey(id, full_name, first_name, username, role, joined_app), addressee:profiles!friendships_addressee_id_fkey(id, full_name, first_name, username, role, joined_app)";
+const CHALLENGE_SELECT = `id, status, question_titles, challenger_id, opponent_id, challenger_score, opponent_score, challenger_answers, opponent_answers, challenger_completed_at, opponent_completed_at, challenger_xp_awarded, opponent_xp_awarded, winner_id, completed_at, created_at, updated_at, challenger:profiles!friend_challenges_challenger_id_fkey(${FRIEND_PROFILE_FIELDS}), opponent:profiles!friend_challenges_opponent_id_fkey(${FRIEND_PROFILE_FIELDS})`;
+const CHALLENGE_QUESTION_COUNT = 10;
 
 const getStoredTheme = () => {
   if (typeof window === "undefined") return "xenon-dark";
@@ -17,6 +26,73 @@ const applyTheme = (theme) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem("xenon-theme", theme);
   }
+};
+
+const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
+  id: profile.id || fallback.id || "",
+  full_name: profile.full_name || fallback.full_name || fallback.name || "",
+  first_name:
+    profile.first_name ||
+    fallback.first_name ||
+    (profile.full_name || fallback.full_name || fallback.name || "").split(" ")[0] ||
+    "User",
+  username: profile.username || fallback.username || "",
+  role: profile.role || fallback.role || "none",
+  has_seen_init: profile.has_seen_init ?? fallback.has_seen_init ?? false,
+  joined_app: profile.joined_app || fallback.joined_app || new Date().toISOString(),
+  created_at: profile.created_at || fallback.created_at || new Date().toISOString(),
+  avatar_url: profile.avatar_url || "",
+  headline: profile.headline || "",
+  about_me: profile.about_me || "",
+  favorite_topic: profile.favorite_topic || "",
+  profile_visibility: profile.profile_visibility ?? true,
+  experience_points: Math.max(0, Number(profile.experience_points ?? fallback.experience_points ?? 0) || 0),
+  level: Math.max(1, Number(profile.level ?? fallback.level ?? 1) || 1),
+});
+
+const sanitizeUsername = (value = "") => value.trim().replace(/[^a-zA-Z0-9_]/g, "");
+
+const normalizeFriendshipRecord = (row, userId) => {
+  const isRequester = row.requester_id === userId;
+  return {
+    ...row,
+    friend: normalizeProfileRecord(isRequester ? row.addressee : row.requester),
+    direction: isRequester ? "outgoing" : "incoming",
+  };
+};
+
+const shuffle = (items = []) => [...items].sort(() => Math.random() - 0.5);
+
+const pickChallengeQuestionTitles = () =>
+  shuffle(PRACTICE_QUESTIONS.map((question) => question.title)).slice(0, CHALLENGE_QUESTION_COUNT);
+
+const normalizeChallengeRecord = (row, userId) => {
+  const isChallenger = row.challenger_id === userId;
+  const selfScore = isChallenger ? row.challenger_score : row.opponent_score;
+  const otherScore = isChallenger ? row.opponent_score : row.challenger_score;
+  const selfAnswers = isChallenger ? row.challenger_answers : row.opponent_answers;
+  const otherAnswers = isChallenger ? row.opponent_answers : row.challenger_answers;
+  const xpAwarded = isChallenger ? row.challenger_xp_awarded : row.opponent_xp_awarded;
+  const opponentProfile = normalizeProfileRecord(isChallenger ? row.opponent : row.challenger);
+  return {
+    ...row,
+    question_titles: Array.isArray(row.question_titles) ? row.question_titles : [],
+    opponentProfile,
+    selfScore,
+    otherScore,
+    selfAnswers,
+    otherAnswers,
+    xpAwarded,
+    isChallenger,
+    result:
+      row.status !== "completed"
+        ? "pending"
+        : row.winner_id === userId
+          ? "win"
+          : row.winner_id
+            ? "loss"
+            : "draw",
+  };
 };
 
 const withTimeout = async (promise, timeoutMs = 5000) => {
@@ -36,7 +112,11 @@ const withTimeout = async (promise, timeoutMs = 5000) => {
 const hasMissingColumnError = (error) =>
   String(error?.message || "").toLowerCase().includes("practice_questions_correct");
 
+const hasMissingProfileProgressError = (error) =>
+  String(error?.message || "").toLowerCase().includes("experience_points");
+
 const LOCAL_PRACTICE_KEY = "xenon-local-practice-correct";
+const LOCAL_ACHIEVEMENTS_KEY = "xenon-local-achievements";
 
 const readLocalPracticeCounts = () => {
   if (typeof window === "undefined") return {};
@@ -65,6 +145,38 @@ const setLocalPracticeCorrect = (classId, studentId, value) => {
   counts[`${classId}:${studentId}`] = nextValue;
   writeLocalPracticeCounts(counts);
   return nextValue;
+};
+
+const readLocalAchievements = () => {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCAL_ACHIEVEMENTS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+
+const writeLocalAchievements = (value) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LOCAL_ACHIEVEMENTS_KEY, JSON.stringify(value));
+};
+
+const getLocalAchievements = (userId) => {
+  if (!userId) return [];
+  const achievements = readLocalAchievements();
+  return achievements[userId] || [];
+};
+
+const saveLocalAchievements = (userId, nextAchievements) => {
+  if (!userId) return [];
+  const achievements = readLocalAchievements();
+  const uniqueAchievements = (nextAchievements || []).filter(
+    (entry, index, arr) =>
+      arr.findIndex((candidate) => candidate.achievement_key === entry.achievement_key) === index,
+  );
+  achievements[userId] = uniqueAchievements;
+  writeLocalAchievements(achievements);
+  return uniqueAchievements;
 };
 
 const mergePracticeCorrect = (classId, studentId, value) =>
@@ -124,6 +236,11 @@ export const useAppStore = create((set, get) => ({
   announcements: [],
   assignments: [],
   achievements: [],
+  friends: [],
+  incomingFriendRequests: [],
+  outgoingFriendRequests: [],
+  friendChallenges: [],
+  databaseWarnings: {},
   streak: { current: 0, longest: 0 },
   resetSessionState: () =>
     set({
@@ -142,8 +259,20 @@ export const useAppStore = create((set, get) => ({
       announcements: [],
       assignments: [],
       achievements: [],
+      friends: [],
+      incomingFriendRequests: [],
+      outgoingFriendRequests: [],
+      friendChallenges: [],
+      databaseWarnings: {},
       streak: { current: 0, longest: 0 },
     }),
+
+  setDatabaseWarning: (featureKey, message) =>
+    set((state) => ({
+      databaseWarnings: message
+        ? { ...state.databaseWarnings, [featureKey]: message }
+        : Object.fromEntries(Object.entries(state.databaseWarnings).filter(([key]) => key !== featureKey)),
+    })),
 
   setTheme: (theme) => {
     if (!THEMES.includes(theme)) return;
@@ -187,8 +316,11 @@ export const useAppStore = create((set, get) => ({
     if (profile?.role === "student") {
       await get().loadStudentClass({ sessionUser, profile });
       get().loadAchievements().catch(() => {});
+      get().loadFriendNetwork().catch(() => {});
+      get().loadFriendChallenges().catch(() => {});
     } else {
       set({ enrolledClass: null });
+      set({ friends: [], incomingFriendRequests: [], outgoingFriendRequests: [], friendChallenges: [] });
     }
 
     return profile;
@@ -215,6 +347,8 @@ export const useAppStore = create((set, get) => ({
           has_seen_init: false,
           joined_app: new Date().toISOString(),
           created_at: new Date().toISOString(),
+          experience_points: 0,
+          level: 1,
         },
         showInitOverlay: false,
         showProfileSetup: true,
@@ -261,6 +395,13 @@ export const useAppStore = create((set, get) => ({
       first_name: firstName,
       username,
       role,
+      avatar_url: "",
+      headline: "",
+      about_me: "",
+      favorite_topic: "",
+      profile_visibility: true,
+      experience_points: 0,
+      level: 1,
     });
   },
 
@@ -312,53 +453,41 @@ export const useAppStore = create((set, get) => ({
   loadProfile: async (sessionUser) => {
     const user = sessionUser || get().user;
     if (!user) return;
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    let data;
+    let error;
+    ({ data, error } = await supabase.from("profiles").select(PROFILE_SELECT_FIELDS).eq("id", user.id).maybeSingle());
+    if (error && String(error.message || "").toLowerCase().includes("column")) {
+      ({ data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle());
+    }
     if (error) {
       const md = user.user_metadata || {};
-      const draftProfile = {
-        id: user.id,
-        full_name: md.full_name || md.name || "",
-        first_name: md.first_name || "",
-        username: md.username || "",
-        role: "none",
-        has_seen_init: false,
-        joined_app: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
+      const draftProfile = normalizeProfileRecord({ id: user.id }, md);
       set({ profile: draftProfile, showInitOverlay: false, showProfileSetup: true });
       return draftProfile;
     }
     if (!data) {
       const md = user.user_metadata || {};
-      const draftProfile = {
-        id: user.id,
-        full_name: md.full_name || md.name || "",
-        first_name: md.first_name || "",
-        username: md.username || "",
-        role: "none",
-        has_seen_init: false,
-        joined_app: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
+      const draftProfile = normalizeProfileRecord({ id: user.id }, md);
       set({ profile: draftProfile, showInitOverlay: false, showProfileSetup: true });
       return draftProfile;
     }
+    const normalized = normalizeProfileRecord(data);
     set({
-      profile: data,
-      showInitOverlay: !data.has_seen_init,
-      showProfileSetup: get().shouldPromptProfileSetup(data, user),
+      profile: normalized,
+      showInitOverlay: !normalized.has_seen_init,
+      showProfileSetup: get().shouldPromptProfileSetup(normalized, user),
     });
-    return data;
+    return normalized;
   },
 
-  completeProfileSetup: async ({ fullName, username, role }) => {
+  completeProfileSetup: async ({ fullName, username, role, headline = "", aboutMe = "", avatarUrl = "", favoriteTopic = "" }) => {
     const { profile, user } = get();
     if (!user) return;
     if (!["student", "teacher"].includes(role)) {
       throw new Error("Please choose Student or Teacher.");
     }
     const firstName = fullName.trim().split(" ")[0] || "User";
-    const sanitizedUsername = username.trim().replace(/[^a-zA-Z0-9_]/g, "");
+    const sanitizedUsername = sanitizeUsername(username);
     if (!sanitizedUsername) throw new Error("Username must contain letters, numbers or underscore.");
 
     const payload = {
@@ -370,6 +499,13 @@ export const useAppStore = create((set, get) => ({
       first_name: firstName,
       username: sanitizedUsername,
       role,
+      headline: headline.trim(),
+      about_me: aboutMe.trim(),
+      avatar_url: avatarUrl.trim(),
+      favorite_topic: favoriteTopic.trim(),
+      profile_visibility: profile?.profile_visibility ?? true,
+      experience_points: profile?.experience_points ?? 0,
+      level: profile?.level ?? 1,
     };
 
     const { error } = await supabase
@@ -454,6 +590,374 @@ export const useAppStore = create((set, get) => ({
     if (error) throw error;
     await get().loadProfile();
     await get().loadStudentClass();
+    if (nextRole === "student") {
+      await get().loadFriendNetwork();
+      await get().loadFriendChallenges();
+    }
+  },
+
+  saveProfileCustomizations: async ({
+    fullName,
+    username,
+    headline = "",
+    aboutMe = "",
+    avatarUrl = "",
+    favoriteTopic = "",
+    profileVisibility = true,
+  }) => {
+    const { profile, user } = get();
+    if (!user || !profile) return;
+    const nextFullName = (fullName || profile.full_name || "").trim();
+    const nextUsername = sanitizeUsername(username || profile.username || "");
+    if (!nextFullName) throw new Error("Full name is required.");
+    if (!nextUsername) throw new Error("Username must contain letters, numbers or underscore.");
+
+    const payload = {
+      full_name: nextFullName,
+      first_name: nextFullName.split(" ")[0] || "User",
+      username: nextUsername,
+      headline: headline.trim(),
+      about_me: aboutMe.trim(),
+      avatar_url: avatarUrl.trim(),
+      favorite_topic: favoriteTopic.trim(),
+      profile_visibility: Boolean(profileVisibility),
+    };
+
+    const { error } = await supabase.from("profiles").update(payload).eq("id", user.id);
+    if (error) throw new Error(translateSupabaseError(error, "Could not save profile details."));
+    await get().loadProfile();
+  },
+
+  searchStudentProfiles: async (query) => {
+    const { user, profile } = get();
+    const trimmed = (query || "").trim();
+    if (!user || profile?.role !== "student" || trimmed.length < 2) return [];
+
+    let data;
+    let error;
+    ({ data, error } = await supabase
+      .from("profiles")
+      .select(FRIEND_PROFILE_FIELDS)
+      .eq("role", "student")
+      .neq("id", user.id)
+      .eq("profile_visibility", true)
+      .or(`username.ilike.%${trimmed}%,full_name.ilike.%${trimmed}%,favorite_topic.ilike.%${trimmed}%`)
+      .limit(12));
+    if (error && String(error.message || "").toLowerCase().includes("column")) {
+      ({ data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, first_name, username, role, joined_app")
+        .eq("role", "student")
+        .neq("id", user.id)
+        .or(`username.ilike.%${trimmed}%,full_name.ilike.%${trimmed}%`)
+        .limit(12));
+    }
+    if (error) throw new Error(translateSupabaseError(error, "Could not search student profiles."));
+    return (data || []).map((entry) => normalizeProfileRecord(entry));
+  },
+
+  loadFriendNetwork: async () => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") {
+      set({ friends: [], incomingFriendRequests: [], outgoingFriendRequests: [] });
+      return { friends: [], incomingFriendRequests: [], outgoingFriendRequests: [] };
+    }
+
+    let data;
+    let error;
+    ({ data, error } = await supabase
+      .from("friendships")
+      .select(FRIENDSHIP_SELECT)
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+      .order("created_at", { ascending: false }));
+    if (error && String(error.message || "").toLowerCase().includes("column")) {
+      ({ data, error } = await supabase
+        .from("friendships")
+        .select(FRIENDSHIP_SELECT_FALLBACK)
+        .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+        .order("created_at", { ascending: false }));
+    }
+
+    if (error) {
+      if (isMissingSupabaseTableError(error, "friendships")) {
+        get().setDatabaseWarning("social", "Friends need the latest Supabase migration before students can connect.");
+        set({ friends: [], incomingFriendRequests: [], outgoingFriendRequests: [] });
+        return { friends: [], incomingFriendRequests: [], outgoingFriendRequests: [] };
+      }
+      throw new Error(translateSupabaseError(error, "Could not load friends."));
+    }
+
+    const network = (data || []).map((row) => normalizeFriendshipRecord(row, user.id));
+    const friends = network.filter((entry) => entry.status === "accepted");
+    const incomingFriendRequests = network.filter((entry) => entry.status === "pending" && entry.direction === "incoming");
+    const outgoingFriendRequests = network.filter((entry) => entry.status === "pending" && entry.direction === "outgoing");
+
+    get().setDatabaseWarning("social", "");
+    set({ friends, incomingFriendRequests, outgoingFriendRequests });
+    return { friends, incomingFriendRequests, outgoingFriendRequests };
+  },
+
+  sendFriendRequest: async (targetProfileId) => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") throw new Error("Only students can add friends.");
+    if (!targetProfileId || targetProfileId === user.id) throw new Error("Choose a different student.");
+
+    const { error } = await supabase.from("friendships").insert({
+      requester_id: user.id,
+      addressee_id: targetProfileId,
+      status: "pending",
+    });
+    if (error) throw new Error(translateSupabaseError(error, "Could not send friend request."));
+    await get().loadFriendNetwork();
+  },
+
+  respondToFriendRequest: async (friendshipId, action = "accept") => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") throw new Error("Only students can manage friend requests.");
+    if (!friendshipId) return;
+
+    if (action === "decline") {
+      const { error } = await supabase.from("friendships").delete().eq("id", friendshipId).eq("addressee_id", user.id);
+      if (error) throw new Error(translateSupabaseError(error, "Could not decline friend request."));
+    } else {
+      const { error } = await supabase
+        .from("friendships")
+        .update({ status: "accepted", responded_at: new Date().toISOString() })
+        .eq("id", friendshipId)
+        .eq("addressee_id", user.id);
+      if (error) throw new Error(translateSupabaseError(error, "Could not accept friend request."));
+    }
+    await get().loadFriendNetwork();
+  },
+
+  removeFriendship: async (friendshipId) => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") throw new Error("Only students can manage friendships.");
+    if (!friendshipId) return;
+    const { error } = await supabase
+      .from("friendships")
+      .delete()
+      .eq("id", friendshipId)
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+    if (error) throw new Error(translateSupabaseError(error, "Could not remove friendship."));
+    await get().loadFriendNetwork();
+  },
+
+  loadPublicProfile: async (profileId) => {
+    if (!profileId) return null;
+    let data;
+    let error;
+    ({ data, error } = await supabase.from("profiles").select(FRIEND_PROFILE_FIELDS).eq("id", profileId).maybeSingle());
+    if (error && String(error.message || "").toLowerCase().includes("column")) {
+      ({ data, error } = await supabase.from("profiles").select("*").eq("id", profileId).maybeSingle());
+    }
+    if (error) throw new Error(translateSupabaseError(error, "Could not load profile."));
+    return data ? normalizeProfileRecord(data) : null;
+  },
+
+  awardExperience: async (amount) => {
+    const { user, profile } = get();
+    const xpGain = Math.max(0, Number(amount) || 0);
+    if (!user || !profile || !xpGain) return { xp: profile?.experience_points || 0, level: profile?.level || 1 };
+
+    const nextXp = Math.max(0, (profile.experience_points || 0) + xpGain);
+    const nextLevel = getLevelFromXp(nextXp);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ experience_points: nextXp, level: nextLevel })
+      .eq("id", user.id);
+    if (error) {
+      if (hasMissingProfileProgressError(error)) {
+        get().setDatabaseWarning("progression", "Levels and XP need the latest Supabase migration before they can be saved.");
+        return { xp: profile.experience_points || 0, level: profile.level || 1 };
+      }
+      throw new Error(translateSupabaseError(error, "Could not update XP."));
+    }
+
+    get().setDatabaseWarning("progression", "");
+    set((state) => ({
+      profile: state.profile
+        ? {
+            ...state.profile,
+            experience_points: nextXp,
+            level: nextLevel,
+          }
+        : state.profile,
+    }));
+    return { xp: nextXp, level: nextLevel };
+  },
+
+  loadFriendChallenges: async () => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") {
+      set({ friendChallenges: [] });
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("friend_challenges")
+      .select(CHALLENGE_SELECT)
+      .or(`challenger_id.eq.${user.id},opponent_id.eq.${user.id}`)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      if (isMissingSupabaseTableError(error, "friend_challenges")) {
+        get().setDatabaseWarning("challenges", "1v1 friend showdowns need the latest Supabase migration before students can challenge each other.");
+        set({ friendChallenges: [] });
+        return [];
+      }
+      throw new Error(translateSupabaseError(error, "Could not load challenges."));
+    }
+
+    const friendChallenges = (data || []).map((row) => normalizeChallengeRecord(row, user.id));
+    get().setDatabaseWarning("challenges", "");
+    set({ friendChallenges });
+    await get().grantPendingChallengeXp(friendChallenges);
+    return friendChallenges;
+  },
+
+  createFriendChallenge: async (opponentId) => {
+    const { user, profile, friends } = get();
+    if (!user || profile?.role !== "student") throw new Error("Only students can start challenges.");
+    if (!friends.some((entry) => entry.friend.id === opponentId)) throw new Error("You can only challenge accepted friends.");
+
+    const { error } = await supabase.from("friend_challenges").insert({
+      challenger_id: user.id,
+      opponent_id: opponentId,
+      status: "pending",
+      question_titles: pickChallengeQuestionTitles(),
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(translateSupabaseError(error, "Could not create challenge."));
+    await get().loadFriendChallenges();
+  },
+
+  respondToChallengeInvite: async (challengeId, action = "accept") => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") throw new Error("Only students can respond to challenges.");
+    if (!challengeId) return;
+
+    const updatePayload =
+      action === "accept"
+        ? { status: "active", updated_at: new Date().toISOString() }
+        : { status: "declined", updated_at: new Date().toISOString(), completed_at: new Date().toISOString() };
+
+    const { error } = await supabase
+      .from("friend_challenges")
+      .update(updatePayload)
+      .eq("id", challengeId)
+      .eq("opponent_id", user.id);
+    if (error) throw new Error(translateSupabaseError(error, "Could not update challenge."));
+    await get().loadFriendChallenges();
+  },
+
+  saveChallengeProgress: async ({ challengeId, score, answers }) => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student" || !challengeId) return null;
+
+    const challenge = (get().friendChallenges || []).find((entry) => entry.id === challengeId);
+    if (!challenge) throw new Error("Challenge not found.");
+
+    const isChallenger = challenge.challenger_id === user.id;
+    const progressPayload = isChallenger
+      ? {
+          challenger_score: score,
+          challenger_answers: answers,
+          challenger_completed_at: answers >= CHALLENGE_QUESTION_COUNT ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          opponent_score: score,
+          opponent_answers: answers,
+          opponent_completed_at: answers >= CHALLENGE_QUESTION_COUNT ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        };
+
+    let updatedChallenge;
+    const { data: challengeData, error } = await supabase
+      .from("friend_challenges")
+      .update(progressPayload)
+      .eq("id", challengeId)
+      .select(CHALLENGE_SELECT)
+      .single();
+    if (error) throw new Error(translateSupabaseError(error, "Could not save challenge progress."));
+    updatedChallenge = challengeData;
+
+    const bothFinished =
+      (updatedChallenge.challenger_answers || 0) >= CHALLENGE_QUESTION_COUNT &&
+      (updatedChallenge.opponent_answers || 0) >= CHALLENGE_QUESTION_COUNT;
+
+    if (bothFinished && updatedChallenge.status !== "completed") {
+      const winnerId =
+        updatedChallenge.challenger_score === updatedChallenge.opponent_score
+          ? null
+          : updatedChallenge.challenger_score > updatedChallenge.opponent_score
+            ? updatedChallenge.challenger_id
+            : updatedChallenge.opponent_id;
+
+      const { data: completedRow, error: completeError } = await supabase
+        .from("friend_challenges")
+        .update({
+          status: "completed",
+          winner_id: winnerId,
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", challengeId)
+        .select(CHALLENGE_SELECT)
+        .single();
+      if (completeError) throw new Error(translateSupabaseError(completeError, "Could not finish challenge."));
+      updatedChallenge = completedRow;
+    }
+
+    const freshChallenges = await get().loadFriendChallenges();
+    return freshChallenges.find((entry) => entry.id === challengeId) || normalizeChallengeRecord(updatedChallenge, user.id);
+  },
+
+  grantPendingChallengeXp: async (challengeRows) => {
+    const { user, profile } = get();
+    if (!user || profile?.role !== "student") return [];
+
+    const rows = challengeRows || get().friendChallenges || [];
+    const pendingAwards = rows.filter((challenge) => {
+      if (challenge.status !== "completed" || challenge.xpAwarded) return false;
+      return challenge.isChallenger
+        ? (challenge.challenger_answers || 0) >= CHALLENGE_QUESTION_COUNT
+        : (challenge.opponent_answers || 0) >= CHALLENGE_QUESTION_COUNT;
+    });
+
+    for (const challenge of pendingAwards) {
+      const breakdown = getChallengeXpBreakdown({
+        playerScore: challenge.selfScore,
+        opponentScore: challenge.otherScore,
+        playerAnswered: challenge.selfAnswers,
+        opponentAnswered: challenge.otherAnswers,
+      });
+
+      if (breakdown.totalXp > 0) {
+        await get().awardExperience(breakdown.totalXp);
+      }
+
+      const awardField = challenge.isChallenger ? "challenger_xp_awarded" : "opponent_xp_awarded";
+      const { error } = await supabase
+        .from("friend_challenges")
+        .update({ [awardField]: true, updated_at: new Date().toISOString() })
+        .eq("id", challenge.id);
+      if (error) throw new Error(translateSupabaseError(error, "Could not finalise challenge rewards."));
+    }
+
+    if (pendingAwards.length) {
+      const { data } = await supabase
+        .from("friend_challenges")
+        .select(CHALLENGE_SELECT)
+        .or(`challenger_id.eq.${user.id},opponent_id.eq.${user.id}`)
+        .order("updated_at", { ascending: false });
+      const friendChallenges = (data || []).map((row) => normalizeChallengeRecord(row, user.id));
+      set({ friendChallenges });
+      return friendChallenges;
+    }
+
+    return rows;
   },
 
   loadProjects: async (ownerId) => {
@@ -601,13 +1105,13 @@ export const useAppStore = create((set, get) => ({
     let classError;
     ({ data: cls, error: classError } = await supabase
       .from("classes")
-      .select("id, name, description, class_code, teacher_id, profiles!classes_teacher_id_fkey(first_name, username), class_members(student_id, total_time_seconds, total_projects, practice_questions_correct, profiles(username, first_name, full_name))")
+      .select("id, name, description, class_code, teacher_id, profiles!classes_teacher_id_fkey(first_name, username), class_members(student_id, total_time_seconds, total_projects, practice_questions_correct, profiles(username, first_name, full_name, level))")
       .eq("id", member.class_id)
       .single());
     if (classError && hasMissingColumnError(classError)) {
       const fallbackClass = await supabase
         .from("classes")
-        .select("id, name, description, class_code, teacher_id, profiles!classes_teacher_id_fkey(first_name, username), class_members(student_id, total_time_seconds, total_projects, profiles(username, first_name, full_name))")
+        .select("id, name, description, class_code, teacher_id, profiles!classes_teacher_id_fkey(first_name, username), class_members(student_id, total_time_seconds, total_projects, profiles(username, first_name, full_name, level))")
         .eq("id", member.class_id)
         .single();
       cls = fallbackClass.data
@@ -891,9 +1395,39 @@ export const useAppStore = create((set, get) => ({
     const { user } = get();
     if (!user) return;
     try {
-      const { data } = await supabase.from('user_achievements').select('achievement_key, earned_at').eq('user_id', user.id);
+      const { data, error } = await supabase.from('user_achievements').select('achievement_key, earned_at').eq('user_id', user.id);
+      if (error) {
+        if (isMissingSupabaseTableError(error, "user_achievements")) {
+          set({
+            achievements: getLocalAchievements(user.id),
+            databaseWarnings: {
+              ...get().databaseWarnings,
+              achievements: "Achievements are using local browser storage until the Supabase migration is run.",
+            },
+          });
+          return;
+        }
+        throw error;
+      }
+      get().setDatabaseWarning("achievements", "");
       set({ achievements: data || [] });
-    } catch { set({ achievements: [] }); }
+    } catch { set({ achievements: getLocalAchievements(user.id) }); }
+  },
+
+  loadAchievementsForUser: async (userId) => {
+    if (!userId) return [];
+    try {
+      const { data, error } = await supabase.from('user_achievements').select('achievement_key, earned_at').eq('user_id', userId);
+      if (error) {
+        if (isMissingSupabaseTableError(error, "user_achievements")) {
+          return getLocalAchievements(userId);
+        }
+        throw error;
+      }
+      return data || [];
+    } catch {
+      return getLocalAchievements(userId);
+    }
   },
 
   checkAndGrantAchievements: async () => {
@@ -912,13 +1446,37 @@ export const useAppStore = create((set, get) => ({
         const rank = enrolledClass.rank;
         if (rank && rank <= 3 && !earned.has('top_3')) toGrant.push('top_3');
         if (rank === 1 && !earned.has('top_1')) toGrant.push('top_1');
+        if (rank === 1 && !earned.has('rank_1')) toGrant.push('rank_1');
+        if (rank === 2 && !earned.has('rank_2')) toGrant.push('rank_2');
+        if (rank === 3 && !earned.has('rank_3')) toGrant.push('rank_3');
       }
       const streakVal = streak?.current || 0;
       if (streakVal >= 3 && !earned.has('streak_3')) toGrant.push('streak_3');
       if (streakVal >= 7 && !earned.has('streak_7')) toGrant.push('streak_7');
       if (!toGrant.length) return;
       const now = new Date().toISOString();
-      await supabase.from('user_achievements').insert(toGrant.map((key) => ({ user_id: user.id, achievement_key: key, earned_at: now })));
+      const nextEntries = [
+        ...(achievements || []),
+        ...toGrant.map((key) => ({ achievement_key: key, earned_at: now })),
+      ];
+      const { error } = await supabase.from('user_achievements').insert(
+        toGrant.map((key) => ({ user_id: user.id, achievement_key: key, earned_at: now }))
+      );
+      if (error) {
+        if (isMissingSupabaseTableError(error, "user_achievements")) {
+          const localAchievements = saveLocalAchievements(user.id, nextEntries);
+          set({
+            achievements: localAchievements,
+            databaseWarnings: {
+              ...get().databaseWarnings,
+              achievements: "Achievements are using local browser storage until the Supabase migration is run.",
+            },
+          });
+          return;
+        }
+        throw error;
+      }
+      get().setDatabaseWarning("achievements", "");
       await get().loadAchievements();
     } catch {}
   },
@@ -927,7 +1485,16 @@ export const useAppStore = create((set, get) => ({
     const cls = classId || get().enrolledClass?.id;
     if (!cls) { set({ announcements: [] }); return; }
     try {
-      const { data } = await supabase.from('class_announcements').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('class_announcements').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      if (error) {
+        if (isMissingSupabaseTableError(error, "class_announcements")) {
+          get().setDatabaseWarning("announcements", "Announcements need the Supabase migration before teachers can post and students can read them.");
+          set({ announcements: [] });
+          return;
+        }
+        throw error;
+      }
+      get().setDatabaseWarning("announcements", "");
       set({ announcements: data || [] });
     } catch { set({ announcements: [] }); }
   },
@@ -935,42 +1502,62 @@ export const useAppStore = create((set, get) => ({
   postAnnouncement: async ({ classId, message }) => {
     const { user } = get();
     const { error } = await supabase.from('class_announcements').insert({ class_id: classId, teacher_id: user.id, message: message.trim() });
-    if (error) throw error;
+    if (error) throw new Error(translateSupabaseError(error, "Could not post announcement."));
+    get().setDatabaseWarning("announcements", "");
   },
 
   deleteAnnouncement: async (id) => {
     const { error } = await supabase.from('class_announcements').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw new Error(translateSupabaseError(error, "Could not delete announcement."));
   },
 
   loadAssignments: async (classId) => {
     const cls = classId || get().enrolledClass?.id;
     if (!cls) { set({ assignments: [] }); return; }
     try {
-      const { data } = await supabase.from('class_assignments').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('class_assignments').select('*').eq('class_id', cls).order('created_at', { ascending: false });
+      if (error) {
+        if (isMissingSupabaseTableError(error, "class_assignments")) {
+          get().setDatabaseWarning("assignments", "Assignments need the Supabase migration before teachers can create them and students can receive them.");
+          set({ assignments: [] });
+          return;
+        }
+        throw error;
+      }
+      get().setDatabaseWarning("assignments", "");
       set({ assignments: data || [] });
     } catch { set({ assignments: [] }); }
   },
 
-  postAssignment: async ({ classId, title, description, dueDate }) => {
+  postAssignment: async ({ classId, title, description, dueDate, questionGoal }) => {
     const { user } = get();
-    const { error } = await supabase.from('class_assignments').insert({ class_id: classId, teacher_id: user.id, title: title.trim(), description: description.trim(), due_date: dueDate || null });
-    if (error) throw error;
+    const parsedGoal = Number(questionGoal);
+    const { error } = await supabase.from('class_assignments').insert({
+      class_id: classId,
+      teacher_id: user.id,
+      title: title.trim(),
+      description: description.trim(),
+      due_date: dueDate || null,
+      question_goal: Number.isFinite(parsedGoal) && parsedGoal > 0 ? Math.floor(parsedGoal) : null,
+    });
+    if (error) throw new Error(translateSupabaseError(error, "Could not post assignment."));
+    get().setDatabaseWarning("assignments", "");
   },
 
   deleteAssignment: async (id) => {
     const { error } = await supabase.from('class_assignments').delete().eq('id', id);
-    if (error) throw error;
+    if (error) throw new Error(translateSupabaseError(error, "Could not delete assignment."));
   },
 
   submitAssignment: async ({ assignmentId, notes }) => {
     const { user, enrolledClass } = get();
     const { error } = await supabase.from('assignment_submissions').upsert({ assignment_id: assignmentId, class_id: enrolledClass?.id, student_id: user.id, notes: notes || '', submitted_at: new Date().toISOString() }, { onConflict: 'assignment_id,student_id' });
-    if (error) throw error;
+    if (error) throw new Error(translateSupabaseError(error, "Could not submit assignment."));
   },
 
   loadSubmissions: async (assignmentId) => {
-    const { data } = await supabase.from('assignment_submissions').select('*, profiles(username, first_name)').eq('assignment_id', assignmentId);
+    const { data, error } = await supabase.from('assignment_submissions').select('*, profiles(username, first_name)').eq('assignment_id', assignmentId);
+    if (error) throw new Error(translateSupabaseError(error, "Could not load submissions."));
     return data || [];
   },
 

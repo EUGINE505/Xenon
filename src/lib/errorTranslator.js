@@ -22,6 +22,33 @@ const GCSE_ERROR_MAP = {
     "Hint: That dictionary key does not exist yet.",
 };
 
+const MIGRATION_FILE = "supabase_migrations.sql";
+
+export function isMissingSupabaseTableError(error, tableName) {
+  const message = String(error?.message || "").toLowerCase();
+  if (!message) return false;
+  if (!message.includes("schema cache")) return false;
+  if (!message.includes("could not find the table")) return false;
+  if (!tableName) return true;
+  return message.includes(`public.${String(tableName).toLowerCase()}`);
+}
+
+export function translateSupabaseError(error, fallback = "Something went wrong.") {
+  if (!error) return fallback;
+  const message = String(error?.message || "").trim();
+  if (!message) return fallback;
+
+  if (isMissingSupabaseTableError(error)) {
+    return `This feature is not set up in Supabase yet. Run the SQL in ${MIGRATION_FILE} and refresh the app.`;
+  }
+
+  if (message.toLowerCase().includes("could not find the") && message.toLowerCase().includes("column")) {
+    return `This feature needs the latest Supabase SQL update. Run ${MIGRATION_FILE} and refresh the app.`;
+  }
+
+  return message;
+}
+
 export function translatePythonError(rawError) {
   const cleaned = String(rawError || "")
     .replace(/^PythonError:\s*/i, "")
