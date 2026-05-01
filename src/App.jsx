@@ -9,7 +9,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import ClassDashboard from "./components/ClassDashboard";
 import ParsonsProblem from "./components/ParsonsProblem";
 import ChallengeArena from "./components/ChallengeArena";
-import TheoryComingSoon from "./components/TheoryComingSoon";
+import TheoryPanel from "./components/TheoryPanel";
 import SiteFooter from "./components/SiteFooter";
 import ProfileAvatar from "./components/ProfileAvatar";
 import AchievementsPanel from "./components/AchievementsPanel";
@@ -536,7 +536,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           {tab === "home" ? <HomeView key="home" profile={profile} enrolledClass={enrolledClass} projectsCount={projects.length} challengeCount={friendChallenges.length} onNavigate={setTab} /> : null}
           {tab === "code" ? <motion.div key="code" {...motionProps}><XenonIDE /></motion.div> : null}
-          {tab === "theory" ? <motion.div key="theory" {...motionProps}><TheoryComingSoon /></motion.div> : null}
+          {tab === "theory" ? <motion.div key="theory" {...motionProps}><TheoryPanel /></motion.div> : null}
           {tab === "projects" ? <SavedProjects key="projects" onOpenIde={() => setTab("code")} /> : null}
           {tab === "parsons" ? <motion.div key="parsons" {...motionProps}><ParsonsProblem /></motion.div> : null}
           {tab === "challenge" && profile?.role === "student" ? <motion.div key="challenge" {...motionProps}><ChallengeArena /></motion.div> : null}

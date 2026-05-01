@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "../store/useAppStore";
 import { supabase } from "../lib/supabase";
 import { translateSupabaseError } from "../lib/errorTranslator";
@@ -19,6 +19,18 @@ const MEDALS = {
   3: { icon: "🥉", label: "3rd Place", bg: "rgba(205,127,50,0.14)", border: "rgba(180,100,30,0.45)", text: "#7a4a10" },
 };
 
+const CARD_ACCENTS = [
+  "#4fb8ff", "#a78bfa", "#34d399", "#fb923c",
+  "#f87171", "#fbbf24", "#38bdf8", "#e879f9", "#2dd4bf",
+];
+
+function getAccent(str = "") {
+  const hash = str.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return CARD_ACCENTS[hash % CARD_ACCENTS.length];
+}
+
+// ─── Announcements ─────────────────────────────────────────────────────────────
+
 function ClassAnnouncementsPanel({ cls }) {
   const { postAnnouncement, deleteAnnouncement, databaseWarnings } = useAppStore();
   const [message, setMessage] = useState("");
@@ -30,7 +42,11 @@ function ClassAnnouncementsPanel({ cls }) {
   const load = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from("class_announcements").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("class_announcements")
+        .select("*")
+        .eq("class_id", cls.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       setAnnouncements(data || []);
       setLoaded(true);
@@ -77,7 +93,9 @@ function ClassAnnouncementsPanel({ cls }) {
         <button className="xenon-btn self-start" onClick={submit}>Post</button>
       </div>
       {err && <p className="text-sm text-red-500">{err}</p>}
-      {databaseWarnings.announcements && <p className="text-sm text-amber-400">{databaseWarnings.announcements}</p>}
+      {databaseWarnings.announcements && (
+        <p className="text-sm text-amber-400">{databaseWarnings.announcements}</p>
+      )}
       {!announcements.length ? (
         <p className="text-sm text-[var(--muted)]">No announcements yet.</p>
       ) : (
@@ -97,6 +115,8 @@ function ClassAnnouncementsPanel({ cls }) {
   );
 }
 
+// ─── Assignments ───────────────────────────────────────────────────────────────
+
 function ClassAssignmentsPanel({ cls }) {
   const { postAssignment, deleteAssignment, loadSubmissions, databaseWarnings } = useAppStore();
   const [title, setTitle] = useState("");
@@ -114,7 +134,11 @@ function ClassAssignmentsPanel({ cls }) {
   const load = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from("class_assignments").select("*").eq("class_id", cls.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("class_assignments")
+        .select("*")
+        .eq("class_id", cls.id)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       setAssignments(data || []);
       setLoaded(true);
@@ -168,13 +192,11 @@ function ClassAssignmentsPanel({ cls }) {
         <textarea
           className="xenon-input w-full resize-none"
           rows={3}
-          placeholder="Describe the task. If you set a question target, students must reach that many practice questions before they can submit."
+          placeholder="Describe the task. If you set a question target, students must reach that number of practice questions before they can submit."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <div className="flex gap-2">
-          <button className="xenon-btn" onClick={submit}>Set Assignment</button>
-        </div>
+        <button className="xenon-btn" onClick={submit}>Set Assignment</button>
         {err && <p className="text-sm text-red-500">{err}</p>}
         {databaseWarnings.assignments && <p className="text-sm text-amber-400">{databaseWarnings.assignments}</p>}
       </div>
@@ -191,11 +213,13 @@ function ClassAssignmentsPanel({ cls }) {
                   <p className="mt-1 text-sm text-[var(--muted)]">{a.description}</p>
                   {a.question_goal ? (
                     <p className="mt-2 text-xs font-semibold text-[var(--accent)]">
-                      Requires {a.question_goal} questions completed before submit is unlocked
+                      Requires {a.question_goal} questions completed before submit unlocks
                     </p>
                   ) : null}
                   {a.due_date && (
-                    <p className="mt-1 text-xs text-[var(--muted)]">Due: {new Date(a.due_date).toLocaleDateString()}</p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Due: {new Date(a.due_date).toLocaleDateString()}
+                    </p>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -215,9 +239,13 @@ function ClassAssignmentsPanel({ cls }) {
                     <div className="space-y-2">
                       {submissions.map((s) => (
                         <div key={s.id} className="rounded border border-[var(--border)] p-3">
-                          <p className="text-sm font-semibold">{s.profiles?.first_name || s.profiles?.username || "Student"}</p>
+                          <p className="text-sm font-semibold">
+                            {s.profiles?.first_name || s.profiles?.username || "Student"}
+                          </p>
                           {s.notes && <p className="mt-1 text-xs text-[var(--muted)]">{s.notes}</p>}
-                          <p className="mt-1 text-xs text-[var(--muted)]">Submitted: {new Date(s.submitted_at).toLocaleString()}</p>
+                          <p className="mt-1 text-xs text-[var(--muted)]">
+                            Submitted: {new Date(s.submitted_at).toLocaleString()}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -232,51 +260,65 @@ function ClassAssignmentsPanel({ cls }) {
   );
 }
 
-function ClassCard({ cls, removeStudentFromClass }) {
+// ─── Class detail view (shown after selecting a card) ─────────────────────────
+
+function ClassDetailView({ cls, onBack, removeStudentFromClass }) {
   const [tab, setTab] = useState("overview");
+  const accent = getAccent(cls.name);
 
   return (
-    <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-xl font-semibold">{cls.name}</h3>
-          <p className="mt-1 text-sm text-[var(--muted)]">{cls.description}</p>
+    <motion.div className="space-y-4" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>
+      {/* Header */}
+      <div className="xenon-panel overflow-hidden p-0">
+        <div className="h-2 w-full" style={{ background: accent }} />
+        <div className="flex flex-wrap items-center justify-between gap-3 p-6">
+          <div>
+            <button
+              className="mb-3 flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--text)] transition"
+              onClick={onBack}
+            >
+              ← All classes
+            </button>
+            <h2 className="text-2xl font-bold">{cls.name}</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">{cls.description}</p>
+          </div>
+          <span className="xenon-pill xenon-code text-lg tracking-widest">{cls.class_code}</span>
         </div>
-        <span className="xenon-pill xenon-code">{cls.class_code}</span>
+        <div className="flex gap-1 border-t border-[var(--border)] px-6">
+          {["overview", "announcements", "assignments"].map((t) => (
+            <button key={t} className="xenon-tab capitalize" data-active={tab === t} onClick={() => setTab(t)}>
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-5 flex gap-1 border-b border-[var(--border)]">
-        {["overview", "announcements", "assignments"].map((t) => (
-          <button key={t} className="xenon-tab capitalize" data-active={tab === t} onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
-      </div>
-
+      {/* Overview */}
       {tab === "overview" && (
-        <div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <div className="xenon-panel-muted p-4">
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="xenon-panel p-5">
               <p className="xenon-kicker">Students</p>
-              <p className="mt-2 text-xl font-semibold">{(cls.class_members || []).length}</p>
+              <p className="mt-2 text-2xl font-bold">{(cls.class_members || []).length}</p>
             </div>
-            <div className="xenon-panel-muted p-4">
+            <div className="xenon-panel p-5">
               <p className="xenon-kicker">Total Practice Time</p>
-              <p className="mt-2 text-xl font-semibold">
+              <p className="mt-2 text-2xl font-bold">
                 {formatPracticeTime((cls.class_members || []).reduce((s, m) => s + (m.total_time_seconds || 0), 0))}
               </p>
             </div>
-            <div className="xenon-panel-muted p-4">
-              <p className="xenon-kicker">Questions Completed (Total)</p>
-              <p className="mt-2 text-xl font-semibold">
+            <div className="xenon-panel p-5">
+              <p className="xenon-kicker">Questions Completed</p>
+              <p className="mt-2 text-2xl font-bold">
                 {(cls.class_members || []).reduce((s, m) => s + (m.practice_questions_correct || 0), 0)}
               </p>
             </div>
           </div>
 
-          <div className="mt-5">
+          {/* Leaderboard */}
+          <div className="xenon-panel p-6">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-lg font-semibold">Leaderboard</h4>
+              <h3 className="text-lg font-semibold">Leaderboard</h3>
               <span className="text-sm text-[var(--muted)]">Ranked by questions, projects, time</span>
             </div>
             <div className="mt-4 space-y-3">
@@ -297,9 +339,14 @@ function ClassCard({ cls, removeStudentFromClass }) {
                       )}
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold">{member.profiles?.first_name || member.profiles?.username || "Student"}</p>
+                          <p className="font-semibold">
+                            {member.profiles?.first_name || member.profiles?.username || "Student"}
+                          </p>
                           {medal && (
-                            <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}>
+                            <span
+                              className="rounded px-1.5 py-0.5 text-xs font-bold"
+                              style={{ background: medal.bg, color: medal.text, border: `1px solid ${medal.border}` }}
+                            >
                               {medal.label}
                             </span>
                           )}
@@ -315,56 +362,121 @@ function ClassCard({ cls, removeStudentFromClass }) {
                   </div>
                 );
               })}
+              {!(cls.class_members || []).length && (
+                <p className="text-sm text-[var(--muted)]">No students enrolled yet. Share the class code above.</p>
+              )}
             </div>
           </div>
 
-          <div className="xenon-scroll mt-5 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-left text-[var(--muted)]">
-                  <th className="py-3 pr-4">Username</th>
-                  <th className="py-3 pr-4">First Name</th>
-                  <th className="py-3 pr-4">Questions</th>
-                  <th className="py-3 pr-4">Time</th>
-                  <th className="py-3 pr-4">Projects</th>
-                  <th className="py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(cls.class_members || []).length ? (
-                  cls.class_members.map((member) => (
-                    <tr key={member.student_id} className="border-b border-[var(--border)] last:border-b-0">
-                      <td className="py-3 pr-4">{member.profiles?.username || "Unknown"}</td>
-                      <td className="py-3 pr-4">{member.profiles?.first_name || "Unknown"}</td>
-                      <td className="py-3 pr-4">{member.practice_questions_correct || 0}</td>
-                      <td className="py-3 pr-4">{formatPracticeTime(member.total_time_seconds || 0)}</td>
-                      <td className="py-3 pr-4">{member.total_projects || 0}</td>
-                      <td className="py-3">
-                        <button className="xenon-btn-ghost text-xs" onClick={() => removeStudentFromClass({ classId: cls.id, studentId: member.student_id })}>
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="py-4 text-[var(--muted)]" colSpan={6}>No students enrolled yet.</td>
+          {/* Student table */}
+          <div className="xenon-panel p-6">
+            <h3 className="mb-4 text-lg font-semibold">All Students</h3>
+            <div className="xenon-scroll overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-left text-[var(--muted)]">
+                    <th className="py-3 pr-4">Username</th>
+                    <th className="py-3 pr-4">Name</th>
+                    <th className="py-3 pr-4">Questions</th>
+                    <th className="py-3 pr-4">Time</th>
+                    <th className="py-3 pr-4">Projects</th>
+                    <th className="py-3">Action</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(cls.class_members || []).length ? (
+                    cls.class_members.map((member) => (
+                      <tr key={member.student_id} className="border-b border-[var(--border)] last:border-b-0">
+                        <td className="py-3 pr-4 font-mono text-sm">@{member.profiles?.username || "—"}</td>
+                        <td className="py-3 pr-4">{member.profiles?.first_name || "—"}</td>
+                        <td className="py-3 pr-4">{member.practice_questions_correct || 0}</td>
+                        <td className="py-3 pr-4">{formatPracticeTime(member.total_time_seconds || 0)}</td>
+                        <td className="py-3 pr-4">{member.total_projects || 0}</td>
+                        <td className="py-3">
+                          <button
+                            className="xenon-btn-ghost text-xs"
+                            onClick={() => removeStudentFromClass({ classId: cls.id, studentId: member.student_id })}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="py-4 text-[var(--muted)]" colSpan={6}>No students enrolled yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {tab === "announcements" && <ClassAnnouncementsPanel cls={cls} />}
-      {tab === "assignments" && <ClassAssignmentsPanel cls={cls} />}
-    </motion.section>
+      {tab === "announcements" && (
+        <div className="xenon-panel p-6">
+          <ClassAnnouncementsPanel cls={cls} />
+        </div>
+      )}
+
+      {tab === "assignments" && (
+        <div className="xenon-panel p-6">
+          <ClassAssignmentsPanel cls={cls} />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
+// ─── Class card (grid tile) ────────────────────────────────────────────────────
+
+function ClassTile({ cls, onClick }) {
+  const accent = getAccent(cls.name);
+  const studentCount = (cls.class_members || []).length;
+
+  return (
+    <motion.button
+      className="xenon-panel group w-full overflow-hidden rounded-2xl text-left transition"
+      onClick={onClick}
+      whileHover={{ y: -3, scale: 1.01 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      {/* Accent banner */}
+      <div className="relative flex h-28 items-end p-4" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}18)`, borderBottom: `2px solid ${accent}55` }}>
+        <div
+          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-xl text-lg font-black"
+          style={{ background: accent + "33", color: accent }}
+        >
+          {cls.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="font-mono text-xs tracking-widest opacity-60">{cls.class_code}</div>
+      </div>
+
+      {/* Content */}
+      <div className="p-5">
+        <h3 className="text-lg font-bold leading-snug">{cls.name}</h3>
+        <p className="mt-1 line-clamp-2 text-sm text-[var(--muted)]">{cls.description}</p>
+        <div className="mt-4 flex items-center justify-between">
+          <div className="flex gap-2">
+            <span className="xenon-badge">{studentCount} student{studentCount !== 1 ? "s" : ""}</span>
+          </div>
+          <span className="text-xs text-[var(--muted)] opacity-0 transition group-hover:opacity-100">
+            Open →
+          </span>
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+// ─── Main ClassDashboard ───────────────────────────────────────────────────────
+
 export default function ClassDashboard() {
   const { classes, createClass, joinClassAsTeacher, removeStudentFromClass, loadTeacherClasses, databaseWarnings } = useAppStore();
+
+  const [selectedId, setSelectedId] = useState(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [name, setName] = useState("");
@@ -379,6 +491,8 @@ export default function ClassDashboard() {
   const [joinStatus, setJoinStatus] = useState("");
 
   const [refreshing, setRefreshing] = useState(false);
+
+  const selectedClass = classes.find((c) => c.id === selectedId) || null;
 
   const submitCreate = async () => {
     setCreateError("");
@@ -410,16 +524,29 @@ export default function ClassDashboard() {
     setRefreshing(false);
   };
 
+  // ── Detail view ──
+  if (selectedClass) {
+    return (
+      <ClassDetailView
+        cls={selectedClass}
+        onBack={() => setSelectedId(null)}
+        removeStudentFromClass={removeStudentFromClass}
+      />
+    );
+  }
+
+  // ── Card grid ──
   return (
-    <div className="space-y-4">
-      <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+    <div className="space-y-6">
+      {/* Header */}
+      <motion.div className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">My Classes</h2>
+            <h2 className="text-2xl font-bold">My Classes</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
               {classes.length
-                ? `${classes.length} class${classes.length === 1 ? "" : "es"} — create more or join an existing one as a co-teacher`
-                : "No classes yet. Create one or join an existing class as a co-teacher."}
+                ? `${classes.length} class${classes.length !== 1 ? "es" : ""} — click a card to manage it`
+                : "No classes yet. Create one or join as a co-teacher."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -427,7 +554,7 @@ export default function ClassDashboard() {
               className="xenon-btn"
               onClick={() => { setShowCreateForm((v) => !v); setShowJoinForm(false); setCreateError(""); }}
             >
-              {showCreateForm ? "Cancel" : "Create a Class"}
+              {showCreateForm ? "Cancel" : "+ Create a Class"}
             </button>
             <button
               className="xenon-btn-subtle"
@@ -444,73 +571,94 @@ export default function ClassDashboard() {
         {joinStatus && !showJoinForm && (
           <p className="mt-3 text-sm text-green-400">{joinStatus}</p>
         )}
-
         {databaseWarnings.class_teachers && (
           <p className="mt-3 text-sm text-amber-400">{databaseWarnings.class_teachers}</p>
         )}
 
-        {showCreateForm && (
-          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-5">
-            <h3 className="text-base font-semibold">Create a New Class</h3>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input
-                className="xenon-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Class name, e.g. Year 10 — Period 2"
-              />
-              <input
-                className="xenon-input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Short description"
-              />
-            </div>
-            <div className="flex gap-2">
+        {/* Create form */}
+        <AnimatePresence>
+          {showCreateForm && (
+            <motion.div
+              className="mt-5 space-y-3 border-t border-[var(--border)] pt-5"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <h3 className="font-semibold">Create a New Class</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  className="xenon-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Year 10 — Period 2"
+                  onKeyDown={(e) => e.key === "Enter" && submitCreate()}
+                />
+                <input
+                  className="xenon-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Short description"
+                  onKeyDown={(e) => e.key === "Enter" && submitCreate()}
+                />
+              </div>
               <button className="xenon-btn" disabled={creating} onClick={submitCreate}>
                 {creating ? "Creating..." : "Create Class"}
               </button>
-            </div>
-            {createError && <p className="text-sm text-red-500">{createError}</p>}
-          </div>
-        )}
+              {createError && <p className="text-sm text-red-500">{createError}</p>}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {showJoinForm && (
-          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-5">
-            <h3 className="text-base font-semibold">Join Another Class as Co-Teacher</h3>
-            <p className="text-sm text-[var(--muted)]">
-              Ask the lead teacher for the class code. You will get full access to that class alongside them.
+        {/* Join form */}
+        <AnimatePresence>
+          {showJoinForm && (
+            <motion.div
+              className="mt-5 space-y-3 border-t border-[var(--border)] pt-5"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <h3 className="font-semibold">Join Another Class as Co-Teacher</h3>
+              <p className="text-sm text-[var(--muted)]">
+                Ask the lead teacher for the class code. You will get full access alongside them.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  className="xenon-input w-44 font-mono uppercase tracking-widest"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  placeholder="CLASS CODE"
+                  maxLength={8}
+                  onKeyDown={(e) => e.key === "Enter" && submitJoin()}
+                />
+                <button className="xenon-btn" disabled={joining} onClick={submitJoin}>
+                  {joining ? "Joining..." : "Join Class"}
+                </button>
+              </div>
+              {joinError && <p className="text-sm text-red-500">{joinError}</p>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Class card grid */}
+      {classes.length > 0 ? (
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {classes.map((cls) => (
+            <ClassTile key={cls.id} cls={cls} onClick={() => setSelectedId(cls.id)} />
+          ))}
+        </div>
+      ) : (
+        !showCreateForm && !showJoinForm && (
+          <div className="xenon-panel p-8 text-center">
+            <p className="text-4xl">🏫</p>
+            <p className="mt-3 font-semibold">No classes yet</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Create your first class above, or join an existing class as a co-teacher using a class code.
             </p>
-            <div className="flex gap-2">
-              <input
-                className="xenon-input w-44 font-mono uppercase tracking-widest"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                placeholder="CLASS CODE"
-                maxLength={8}
-                onKeyDown={(e) => e.key === "Enter" && submitJoin()}
-              />
-              <button className="xenon-btn" disabled={joining} onClick={submitJoin}>
-                {joining ? "Joining..." : "Join Class"}
-              </button>
-            </div>
-            {joinError && <p className="text-sm text-red-500">{joinError}</p>}
-            {joinStatus && <p className="text-sm text-green-400">{joinStatus}</p>}
           </div>
-        )}
-      </motion.section>
-
-      {!classes.length && !showCreateForm && !showJoinForm && (
-        <section className="xenon-panel p-6">
-          <p className="text-sm text-[var(--muted)]">
-            No classes yet. Use the buttons above to create your first class, or join an existing class as a co-teacher.
-          </p>
-        </section>
+        )
       )}
-
-      {classes.map((cls) => (
-        <ClassCard key={cls.id} cls={cls} removeStudentFromClass={removeStudentFromClass} />
-      ))}
     </div>
   );
 }
