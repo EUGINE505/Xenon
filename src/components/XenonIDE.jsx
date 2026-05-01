@@ -43,7 +43,9 @@ export default function XenonIDE() {
   const [isRunning, setIsRunning] = useState(false);
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [terminalInput, setTerminalInput] = useState("");
+  const [terminalCaret, setTerminalCaret] = useState(0);
   const terminalEndRef = useRef(null);
+  const terminalInputRef = useRef(null);
   const {
     activeProject,
     enrolledClass,
@@ -91,6 +93,7 @@ export default function XenonIDE() {
       sendInputToWorker(value);
       setTerminalInput("");
       setIsWaitingForInput(false);
+      setTerminalCaret(0);
     }
   };
 
@@ -294,14 +297,20 @@ export default function XenonIDE() {
             )}
 
             {isWaitingForInput && (
-              <div className="flex items-center gap-2 text-sm font-bold text-amber-200">
-                <span>&gt;</span>
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-200/30 bg-black/20 px-3 py-2 text-sm font-bold text-amber-200">
+                <span className="shrink-0">&gt;</span>
                 <input
+                  ref={terminalInputRef}
                   autoFocus
-                  className="w-full bg-transparent outline-none ring-0 placeholder:text-amber-200/50"
+                  className="w-full bg-transparent outline-none ring-0 placeholder:text-amber-200/50 caret-amber-200"
                   placeholder="Type here..."
                   value={terminalInput}
-                  onChange={(e) => setTerminalInput(e.target.value)}
+                  onChange={(e) => {
+                    setTerminalInput(e.target.value);
+                    setTerminalCaret(e.target.selectionStart ?? e.target.value.length);
+                  }}
+                  onClick={(e) => setTerminalCaret(e.currentTarget.selectionStart ?? terminalInput.length)}
+                  onKeyUp={(e) => setTerminalCaret(e.currentTarget.selectionStart ?? terminalInput.length)}
                   onKeyDown={handleTerminalSubmit}
                 />
               </div>

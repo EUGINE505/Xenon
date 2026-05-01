@@ -3,6 +3,7 @@ let sab;
 let inputControl;
 let inputData;
 let workerReadyPromise = null;
+let hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
 
 /**
  * Initializes the Pyodide worker and SharedArrayBuffer for sync input.
@@ -13,7 +14,7 @@ export function getPyodideWorker() {
 
   worker = new Worker(new URL("./pyodide.worker.js", import.meta.url));
 
-  sab = new SharedArrayBuffer(1024 * 16);
+  sab = hasSharedArrayBuffer ? new SharedArrayBuffer(1024 * 16) : new ArrayBuffer(1024 * 16);
   inputControl = new Int32Array(sab);
   inputData = new Uint8Array(sab, 8);
 

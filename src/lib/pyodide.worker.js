@@ -59,6 +59,10 @@ self.onmessage = async (e) => {
   const { type, code, sab } = e.data;
 
   if (type === "init") {
+    if (!sab) {
+      self.postMessage({ type: "error", error: "SharedArrayBuffer is not available in this environment." });
+      return;
+    }
     await init(sab);
   } else if (type === "run") {
     if (!pyodide) {
