@@ -1022,13 +1022,17 @@ export const useAppStore = create((set, get) => ({
   createClass: async ({ name, description }) => {
     const { user } = get();
     const code = generateClassCode();
-    const { error } = await supabase.from("classes").insert({
+    const { data, error } = await supabase.from("classes").insert({
       teacher_id: user.id,
       name,
       description,
       class_code: code,
-    });
+    }).select("id").single();
     if (error) throw error;
+    // Also register in class_teachers junction (silently ignore if migration not yet run)
+    if (data?.id) {
+      supabase.from("class_teachers").insert({ class_id: data.id, teacher_id: user.id }).then(() => {}).catch(() => {});
+    }
     await get().loadTeacherClasses();
   },
 
@@ -1039,10 +1043,51 @@ export const useAppStore = create((set, get) => ({
       set({ classes: [] });
       return [];
     }
-    const { data } = await supabase.from("classes").select("*, class_members(*, profiles(*))").eq("teacher_id", resolvedTeacherId);
+
+    // Try class_teachers junction table first (supports co-teaching)
+    let classIds = null;
+    const { data: ctData, error: ctError } = await supabase
+      .from("class_teachers")
+      .select("class_id")
+      .eq("teacher_id", resolvedTeacherId);
+
+    if (!ctError) {
+      classIds = (ctData || []).map((r) => r.class_id);
+      get().setDatabaseWarning("class_teachers", "");
+    } else if (isMissingSupabaseTableError(ctError, "class_teachers")) {
+      get().setDatabaseWarning("class_teachers", "Co-teacher support needs the class_teachers_migration.sql to be run in Supabase first.");
+    }
+
+    let data;
+    if (classIds !== null && classIds.length > 0) {
+      ({ data } = await supabase.from("classes").select("*, class_members(*, profiles(*))").in("id", classIds));
+    } else if (classIds !== null && classIds.length === 0) {
+      data = [];
+    } else {
+      // Fallback: original single teacher_id query
+      ({ data } = await supabase.from("classes").select("*, class_members(*, profiles(*))").eq("teacher_id", resolvedTeacherId));
+    }
+
     const classes = (data || []).map((cls) => hydrateClassLeaderboard(cls));
     set({ classes });
     return classes;
+  },
+
+  joinClassAsTeacher: async (classCode) => {
+    const { user } = get();
+    const trimmed = (classCode || "").trim().toUpperCase();
+    if (!trimmed) throw new Error("Please enter a class code.");
+    const { data: cls, error: clsError } = await supabase.from("classes").select("id").eq("class_code", trimmed).single();
+    if (clsError || !cls) throw new Error("Class code not found. Check the code and try again.");
+    const { error } = await supabase.from("class_teachers").insert({ class_id: cls.id, teacher_id: user.id });
+    if (error) {
+      if (isMissingSupabaseTableError(error, "class_teachers")) {
+        throw new Error("Co-teacher support requires class_teachers_migration.sql to be run in Supabase first.");
+      }
+      if (String(error.code) === "23505") throw new Error("You are already a teacher in this class.");
+      throw new Error(translateSupabaseError(error, "Could not join class."));
+    }
+    await get().loadTeacherClasses();
   },
 
   removeStudentFromClass: async ({ classId, studentId }) => {

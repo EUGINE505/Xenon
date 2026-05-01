@@ -163,12 +163,12 @@ function ClassAssignmentsPanel({ cls }) {
         <div className="grid gap-3 md:grid-cols-3">
           <input className="xenon-input" placeholder="Assignment title" value={title} onChange={(e) => setTitle(e.target.value)} />
           <input className="xenon-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          <input className="xenon-input" type="number" min="1" placeholder="Question target" value={questionGoal} onChange={(e) => setQuestionGoal(e.target.value)} />
+          <input className="xenon-input" type="number" min="1" placeholder="Questions to complete (e.g. 20)" value={questionGoal} onChange={(e) => setQuestionGoal(e.target.value)} />
         </div>
         <textarea
           className="xenon-input w-full resize-none"
           rows={3}
-          placeholder="Describe the task for your students. You can also set how many practice questions they should complete."
+          placeholder="Describe the task. If you set a question target, students must reach that many practice questions before they can submit."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
@@ -190,7 +190,9 @@ function ClassAssignmentsPanel({ cls }) {
                   <p className="font-semibold">{a.title}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">{a.description}</p>
                   {a.question_goal ? (
-                    <p className="mt-2 text-xs font-semibold text-[var(--accent)]">Question target: {a.question_goal}</p>
+                    <p className="mt-2 text-xs font-semibold text-[var(--accent)]">
+                      Requires {a.question_goal} questions completed before submit is unlocked
+                    </p>
                   ) : null}
                   {a.due_date && (
                     <p className="mt-1 text-xs text-[var(--muted)]">Due: {new Date(a.due_date).toLocaleDateString()}</p>
@@ -265,7 +267,7 @@ function ClassCard({ cls, removeStudentFromClass }) {
               </p>
             </div>
             <div className="xenon-panel-muted p-4">
-              <p className="xenon-kicker">Skills Correct (Total)</p>
+              <p className="xenon-kicker">Questions Completed (Total)</p>
               <p className="mt-2 text-xl font-semibold">
                 {(cls.class_members || []).reduce((s, m) => s + (m.practice_questions_correct || 0), 0)}
               </p>
@@ -275,7 +277,7 @@ function ClassCard({ cls, removeStudentFromClass }) {
           <div className="mt-5">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-lg font-semibold">Leaderboard</h4>
-              <span className="text-sm text-[var(--muted)]">Ranked by skills, projects, time</span>
+              <span className="text-sm text-[var(--muted)]">Ranked by questions, projects, time</span>
             </div>
             <div className="mt-4 space-y-3">
               {(cls.leaderboard || cls.class_members || []).map((member, index) => {
@@ -306,7 +308,7 @@ function ClassCard({ cls, removeStudentFromClass }) {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm">
-                      <span className="xenon-badge">{member.practice_questions_correct || 0} correct</span>
+                      <span className="xenon-badge">{member.practice_questions_correct || 0} questions</span>
                       <span className="xenon-badge">{member.total_projects || 0} projects</span>
                       <span className="xenon-badge">{formatPracticeTime(member.total_time_seconds || 0)}</span>
                     </div>
@@ -322,7 +324,7 @@ function ClassCard({ cls, removeStudentFromClass }) {
                 <tr className="border-b border-[var(--border)] text-left text-[var(--muted)]">
                   <th className="py-3 pr-4">Username</th>
                   <th className="py-3 pr-4">First Name</th>
-                  <th className="py-3 pr-4">Correct</th>
+                  <th className="py-3 pr-4">Questions</th>
                   <th className="py-3 pr-4">Time</th>
                   <th className="py-3 pr-4">Projects</th>
                   <th className="py-3">Action</th>
@@ -362,52 +364,147 @@ function ClassCard({ cls, removeStudentFromClass }) {
 }
 
 export default function ClassDashboard() {
-  const { classes, createClass, removeStudentFromClass, loadTeacherClasses } = useAppStore();
+  const { classes, createClass, joinClassAsTeacher, removeStudentFromClass, loadTeacherClasses, databaseWarnings } = useAppStore();
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const [showJoinForm, setShowJoinForm] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState("");
+  const [joinStatus, setJoinStatus] = useState("");
+
   const [refreshing, setRefreshing] = useState(false);
 
-  const submitClass = async () => {
-    setStatus(""); setError("");
-    if (!name.trim() || !description.trim()) { setError("Class name and description are required."); return; }
+  const submitCreate = async () => {
+    setCreateError("");
+    if (!name.trim() || !description.trim()) { setCreateError("Class name and description are required."); return; }
+    setCreating(true);
     try {
       await createClass({ name: name.trim(), description: description.trim() });
-      setStatus("Class created.");
       setName(""); setDescription("");
-    } catch (err) { setError(err?.message || "Could not create class."); }
+      setShowCreateForm(false);
+    } catch (err) { setCreateError(err?.message || "Could not create class."); }
+    setCreating(false);
+  };
+
+  const submitJoin = async () => {
+    setJoinError(""); setJoinStatus("");
+    setJoining(true);
+    try {
+      await joinClassAsTeacher(joinCode);
+      setJoinCode("");
+      setJoinStatus("Joined! The class has been added to your list.");
+      setShowJoinForm(false);
+    } catch (err) { setJoinError(err?.message || "Could not join class."); }
+    setJoining(false);
   };
 
   const refreshClasses = async () => {
-    setStatus(""); setError(""); setRefreshing(true);
-    try { await loadTeacherClasses(); setStatus("Class data refreshed."); }
-    catch (err) { setError(err?.message || "Could not refresh."); }
-    finally { setRefreshing(false); }
+    setRefreshing(true);
+    try { await loadTeacherClasses(); } catch {}
+    setRefreshing(false);
   };
 
   return (
     <div className="space-y-4">
       <motion.section className="xenon-panel p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-        <h2 className="text-2xl font-semibold">Class Dashboard</h2>
-        <p className="mt-2 text-sm text-[var(--muted)]">Create classes, post announcements, set assignments, and manage students.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <input className="xenon-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Class Name" />
-          <input className="xenon-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold">My Classes</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {classes.length
+                ? `${classes.length} class${classes.length === 1 ? "" : "es"} — create more or join an existing one as a co-teacher`
+                : "No classes yet. Create one or join an existing class as a co-teacher."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="xenon-btn"
+              onClick={() => { setShowCreateForm((v) => !v); setShowJoinForm(false); setCreateError(""); }}
+            >
+              {showCreateForm ? "Cancel" : "Create a Class"}
+            </button>
+            <button
+              className="xenon-btn-subtle"
+              onClick={() => { setShowJoinForm((v) => !v); setShowCreateForm(false); setJoinError(""); setJoinStatus(""); }}
+            >
+              {showJoinForm ? "Cancel" : "Join Another Class"}
+            </button>
+            <button className="xenon-btn-ghost" disabled={refreshing} onClick={refreshClasses}>
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className="xenon-btn" onClick={submitClass}>Create Class</button>
-          <button className="xenon-btn-ghost" disabled={refreshing} onClick={refreshClasses}>
-            {refreshing ? "Refreshing..." : "Refresh Data"}
-          </button>
-        </div>
-        {status && <p className="mt-3 text-sm text-green-600">{status}</p>}
-        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+
+        {joinStatus && !showJoinForm && (
+          <p className="mt-3 text-sm text-green-400">{joinStatus}</p>
+        )}
+
+        {databaseWarnings.class_teachers && (
+          <p className="mt-3 text-sm text-amber-400">{databaseWarnings.class_teachers}</p>
+        )}
+
+        {showCreateForm && (
+          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-5">
+            <h3 className="text-base font-semibold">Create a New Class</h3>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input
+                className="xenon-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Class name, e.g. Year 10 — Period 2"
+              />
+              <input
+                className="xenon-input"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Short description"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button className="xenon-btn" disabled={creating} onClick={submitCreate}>
+                {creating ? "Creating..." : "Create Class"}
+              </button>
+            </div>
+            {createError && <p className="text-sm text-red-500">{createError}</p>}
+          </div>
+        )}
+
+        {showJoinForm && (
+          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-5">
+            <h3 className="text-base font-semibold">Join Another Class as Co-Teacher</h3>
+            <p className="text-sm text-[var(--muted)]">
+              Ask the lead teacher for the class code. You will get full access to that class alongside them.
+            </p>
+            <div className="flex gap-2">
+              <input
+                className="xenon-input w-44 font-mono uppercase tracking-widest"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="CLASS CODE"
+                maxLength={8}
+                onKeyDown={(e) => e.key === "Enter" && submitJoin()}
+              />
+              <button className="xenon-btn" disabled={joining} onClick={submitJoin}>
+                {joining ? "Joining..." : "Join Class"}
+              </button>
+            </div>
+            {joinError && <p className="text-sm text-red-500">{joinError}</p>}
+            {joinStatus && <p className="text-sm text-green-400">{joinStatus}</p>}
+          </div>
+        )}
       </motion.section>
 
-      {!classes.length && (
+      {!classes.length && !showCreateForm && !showJoinForm && (
         <section className="xenon-panel p-6">
-          <p className="text-sm text-[var(--muted)]">No classes yet. Create one above.</p>
+          <p className="text-sm text-[var(--muted)]">
+            No classes yet. Use the buttons above to create your first class, or join an existing class as a co-teacher.
+          </p>
         </section>
       )}
 

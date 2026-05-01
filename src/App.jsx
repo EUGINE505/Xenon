@@ -281,30 +281,60 @@ function StudentClassView() {
                   const done = submittedIds.has(assignment.id);
                   const submitting = submittingId === assignment.id;
                   const isOverdue = assignment.due_date && new Date(assignment.due_date) < new Date();
+                  const questionsCompleted = enrolledClass?.practice_questions_correct || 0;
+                  const hasGoal = !!assignment.question_goal;
+                  const goalMet = !hasGoal || questionsCompleted >= assignment.question_goal;
+                  const progressPct = hasGoal ? Math.min(100, Math.round((questionsCompleted / assignment.question_goal) * 100)) : 100;
                   return (
                     <div key={assignment.id} className="xenon-panel-muted p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="font-semibold">{assignment.title}</p>
                           <p className="mt-1 text-sm text-[var(--muted)]">{assignment.description}</p>
-                          {assignment.question_goal ? (
-                            <p className="mt-2 text-xs font-semibold text-[var(--accent)]">
-                              Practice target: complete {assignment.question_goal} questions in the Practice tab
-                            </p>
-                          ) : null}
                           {assignment.due_date ? (
                             <p className={clsx("mt-1 text-xs font-semibold", isOverdue ? "text-red-500" : "text-[var(--muted)]")}>
                               Due: {new Date(assignment.due_date).toLocaleDateString()} {isOverdue ? "(overdue)" : ""}
                             </p>
                           ) : null}
+                          {hasGoal && !done ? (
+                            <div className="mt-3">
+                              <div className="flex items-center justify-between text-xs mb-1">
+                                <span className={clsx("font-semibold", goalMet ? "text-green-400" : "text-[var(--accent)]")}>
+                                  {goalMet
+                                    ? `Goal reached — ${questionsCompleted} / ${assignment.question_goal} questions`
+                                    : `${questionsCompleted} / ${assignment.question_goal} questions completed`}
+                                </span>
+                                <span className="text-[var(--muted)]">{progressPct}%</span>
+                              </div>
+                              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${progressPct}%`,
+                                    background: goalMet ? "var(--success, #22c55e)" : "var(--accent)",
+                                  }}
+                                />
+                              </div>
+                              {!goalMet && (
+                                <p className="mt-1.5 text-xs text-[var(--muted)]">
+                                  Complete {assignment.question_goal - questionsCompleted} more question{assignment.question_goal - questionsCompleted === 1 ? "" : "s"} in the Practice tab to unlock submission.
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                         {done ? (
-                          <span className="xenon-badge" style={{ borderColor: "var(--success)", color: "var(--success)", background: "rgba(26,110,62,0.1)" }}>
+                          <span className="xenon-badge shrink-0" style={{ borderColor: "var(--success)", color: "var(--success)", background: "rgba(26,110,62,0.1)" }}>
                             Submitted
                           </span>
                         ) : (
-                          <button className="xenon-btn" disabled={submitting} onClick={() => handleSubmit(assignment.id)}>
-                            {submitting ? "Submitting..." : "Mark as Submitted"}
+                          <button
+                            className="xenon-btn shrink-0"
+                            disabled={submitting || !goalMet}
+                            title={!goalMet ? `Complete ${assignment.question_goal - questionsCompleted} more questions to unlock` : undefined}
+                            onClick={() => handleSubmit(assignment.id)}
+                          >
+                            {submitting ? "Submitting..." : goalMet ? "Mark as Submitted" : `Locked — ${progressPct}% done`}
                           </button>
                         )}
                       </div>
@@ -354,7 +384,7 @@ function StudentClassView() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm">
-                      <span className="xenon-badge">{entry.practice_questions_correct || 0} correct</span>
+                      <span className="xenon-badge">{entry.practice_questions_correct || 0} questions</span>
                       <span className="xenon-badge">{entry.total_projects || 0} projects</span>
                       <span className="xenon-badge">{formatPracticeTime(entry.total_time_seconds || 0)}</span>
                     </div>
