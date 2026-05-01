@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
 import { getPyodideWorker, sendInputToWorker } from "../lib/pyodide";
@@ -43,9 +43,13 @@ export default function XenonIDE() {
   const [isRunning, setIsRunning] = useState(false);
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [terminalInput, setTerminalInput] = useState("");
-  const [terminalCaret, setTerminalCaret] = useState(0);
-  const terminalEndRef = useRef(null);
+
+  // Caret fix: store position in a ref so useLayoutEffect can restore it
+  // after each React-controlled re-render without causing extra renders itself.
+  const caretPosRef = useRef(0);
   const terminalInputRef = useRef(null);
+  const terminalEndRef = useRef(null);
+
   const {
     activeProject,
     enrolledClass,
@@ -72,10 +76,26 @@ export default function XenonIDE() {
     projectIdRef.current = activeProject.id;
   };
 
+  // Scroll output to bottom whenever lines change or input prompt appears
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLines, isWaitingForInput]);
 
+  // Restore caret position after every render that touches terminalInput
+  useLayoutEffect(() => {
+    const el = terminalInputRef.current;
+    if (!el || !isWaitingForInput) return;
+    el.setSelectionRange(caretPosRef.current, caretPosRef.current);
+  }, [terminalInput, isWaitingForInput]);
+
+  // Auto-focus the input whenever the terminal starts waiting
+  useEffect(() => {
+    if (isWaitingForInput) {
+      terminalInputRef.current?.focus();
+    }
+  }, [isWaitingForInput]);
+
+  // Sync editor value when active project changes
   useEffect(() => {
     if (!editorRef.current) return;
     if (activeProject.id === projectIdRef.current) return;
@@ -86,24 +106,32 @@ export default function XenonIDE() {
     }
   }, [activeProject.id, activeProject.code]);
 
-  const handleTerminalSubmit = (e) => {
+  const handleTerminalChange = (e) => {
+    caretPosRef.current = e.target.selectionStart ?? e.target.value.length;
+    setTerminalInput(e.target.value);
+  };
+
+  const handleTerminalKeyDown = (e) => {
+    // Track caret on all key presses for accuracy
+    caretPosRef.current = e.currentTarget.selectionStart ?? terminalInput.length;
+
     if (e.key === "Enter" && isWaitingForInput) {
       const value = terminalInput;
       appendConsoleLine({ type: "in", text: value });
       sendInputToWorker(value);
       setTerminalInput("");
+      caretPosRef.current = 0;
       setIsWaitingForInput(false);
-      setTerminalCaret(0);
     }
   };
 
   const runCode = async () => {
     if (isRunning) return;
     setIsRunning(true);
-    setConsoleLines([{ type: "sys", text: "Starting Python worker..." }]);
+    setConsoleLines([{ type: "sys", text: "Starting Python runtime..." }]);
 
     try {
-      const { worker, sab, workerReadyPromise } = getPyodideWorker();
+      const { worker, workerReadyPromise } = getPyodideWorker();
 
       const handleMessage = (e) => {
         const { type, text, variables: newVars, error } = e.data;
@@ -124,6 +152,7 @@ export default function XenonIDE() {
           case "done":
             setVariables(newVars || []);
             setIsRunning(false);
+            setIsWaitingForInput(false);
             worker.removeEventListener("message", handleMessage);
             break;
           case "error":
@@ -132,6 +161,7 @@ export default function XenonIDE() {
               text: profile?.role === "student" ? translatePythonError(error) : error,
             });
             setIsRunning(false);
+            setIsWaitingForInput(false);
             worker.removeEventListener("message", handleMessage);
             break;
           default:
@@ -141,10 +171,10 @@ export default function XenonIDE() {
 
       worker.addEventListener("message", handleMessage);
 
-      // Wait for Pyodide to finish initializing before sending run
+      // Wait for Pyodide to finish initialising before sending code
       await workerReadyPromise;
       setConsoleLines([{ type: "sys", text: "Running..." }]);
-      worker.postMessage({ type: "run", code: activeProject.code, sab });
+      worker.postMessage({ type: "run", code: activeProject.code });
     } catch (error) {
       setIsRunning(false);
       appendConsoleLine({ type: "err", text: "Worker Error: " + String(error) });
@@ -274,12 +304,15 @@ export default function XenonIDE() {
 
         <section className="xenon-panel flex h-[70vh] flex-col p-5">
           <h3 className="text-lg font-semibold">Output</h3>
-          <div className="xenon-terminal xenon-scroll mt-4 flex-1 overflow-auto p-4">
+          <div
+            className="xenon-terminal xenon-scroll mt-4 flex-1 overflow-auto p-4"
+            onClick={() => isWaitingForInput && terminalInputRef.current?.focus()}
+          >
             {consoleLines.length ? (
               consoleLines.map((line, index) => (
                 <p
                   key={`${line.text}-${index}`}
-                  className={`xenon-code mb-2 whitespace-pre-wrap text-sm ${
+                  className={`xenon-code mb-1 whitespace-pre-wrap text-sm leading-5 ${
                     line.type === "err"
                       ? "text-red-300"
                       : line.type === "sys"
@@ -297,21 +330,20 @@ export default function XenonIDE() {
             )}
 
             {isWaitingForInput && (
-              <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-200/30 bg-black/20 px-3 py-2 text-sm font-bold text-amber-200">
-                <span className="shrink-0">&gt;</span>
+              <div className="mt-2 flex items-center gap-2 rounded border border-amber-200/40 bg-amber-200/5 px-3 py-2">
+                <span className="shrink-0 text-sm font-bold text-amber-200">&gt;</span>
                 <input
                   ref={terminalInputRef}
-                  autoFocus
-                  className="w-full bg-transparent outline-none ring-0 placeholder:text-amber-200/50 caret-amber-200"
-                  placeholder="Type here..."
+                  className="w-full bg-transparent text-sm font-bold text-amber-200 outline-none placeholder:text-amber-200/40 caret-amber-200"
+                  placeholder="Type input and press Enter…"
                   value={terminalInput}
-                  onChange={(e) => {
-                    setTerminalInput(e.target.value);
-                    setTerminalCaret(e.target.selectionStart ?? e.target.value.length);
-                  }}
-                  onClick={(e) => setTerminalCaret(e.currentTarget.selectionStart ?? terminalInput.length)}
-                  onKeyUp={(e) => setTerminalCaret(e.currentTarget.selectionStart ?? terminalInput.length)}
-                  onKeyDown={handleTerminalSubmit}
+                  onChange={handleTerminalChange}
+                  onKeyDown={handleTerminalKeyDown}
+                  onClick={(e) => { caretPosRef.current = e.currentTarget.selectionStart ?? terminalInput.length; }}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                 />
               </div>
             )}
@@ -331,7 +363,7 @@ export default function XenonIDE() {
             <button className="text-sm text-[var(--muted)] hover:text-white" onClick={() => setShowVariables(false)}>Close</button>
           </div>
           <p className="mt-1 text-sm text-[var(--muted)]">Inspect the current value and type of your variables after execution.</p>
-          
+
           <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
             <table className="w-full text-left text-sm">
               <thead className="bg-[var(--panel-muted)] text-[var(--muted)]">
