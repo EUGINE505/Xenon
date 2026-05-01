@@ -3,17 +3,13 @@ importScripts("https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js");
 let pyodide = null;
 let useSAB = false;
 
-// SAB mode state
+// SAB mode
 let inputControl = null;
 let inputData = null;
 let sabInstance = null;
 let localBuffer = "";
 
-// Async mode state
-let stdinResolver = null;
-let asyncInputBuffer = "";
-
-// ─── Initialisation ──────────────────────────────────────────────────────────
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function initWithSAB(sab) {
   sabInstance = sab;
@@ -24,19 +20,18 @@ async function initWithSAB(sab) {
     indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/",
   });
 
+  // Stdin reads one char at a time, blocking via Atomics.wait until the
+  // main thread writes a line into shared memory.
   pyodide.setStdin({
     isatty: false,
     stdin: () => {
       if (localBuffer.length === 0) {
         self.postMessage({ type: "stdin_request" });
-
-        // Block until the main thread writes into shared memory
         Atomics.wait(inputControl, 0, 0);
 
         const length = Atomics.load(inputControl, 1);
         const bytes = new Uint8Array(sabInstance, 8, length);
         localBuffer = new TextDecoder().decode(bytes);
-
         Atomics.store(inputControl, 0, 0);
       }
 
@@ -52,38 +47,15 @@ async function initWithSAB(sab) {
   self.postMessage({ type: "ready" });
 }
 
-async function initAsync() {
+async function initNoSAB() {
   pyodide = await loadPyodide({
     indexURL: "https://cdn.jsdelivr.net/pyodide/v0.27.7/full/",
   });
-
-  // Async stdin: return a Promise that resolves when a stdin_response arrives
-  pyodide.setStdin({
-    isatty: false,
-    stdin: () => {
-      if (asyncInputBuffer.length > 0) {
-        const char = asyncInputBuffer.charAt(0);
-        asyncInputBuffer = asyncInputBuffer.substring(1);
-        return char;
-      }
-
-      // Signal the main thread we need input, then wait for it
-      self.postMessage({ type: "stdin_request" });
-      return new Promise((resolve) => {
-        stdinResolver = (text) => {
-          asyncInputBuffer = text;
-          const char = asyncInputBuffer.charAt(0);
-          asyncInputBuffer = asyncInputBuffer.substring(1);
-          resolve(char);
-        };
-      });
-    },
-  });
-
+  // stdin is set per-run from the pre-buffer sent with the run message
   self.postMessage({ type: "ready" });
 }
 
-// ─── Variable extraction helper ───────────────────────────────────────────────
+// ─── Variable extraction ──────────────────────────────────────────────────────
 
 function extractVariables() {
   const globals = pyodide.globals.toJs();
@@ -121,31 +93,19 @@ function extractVariables() {
 // ─── Message handler ──────────────────────────────────────────────────────────
 
 self.onmessage = async (e) => {
-  const { type, code, sab, value } = e.data;
+  const { type, code, sab, stdinPreBuffer } = e.data;
 
   if (type === "init") {
     try {
-      // Main thread sends a non-null sab only when SharedArrayBuffer +
-      // crossOriginIsolated are confirmed available there.
       if (sab !== null && sab !== undefined) {
         useSAB = true;
         await initWithSAB(sab);
       } else {
         useSAB = false;
-        await initAsync();
+        await initNoSAB();
       }
     } catch (err) {
       self.postMessage({ type: "error", error: "Failed to load Pyodide: " + err.message });
-    }
-    return;
-  }
-
-  if (type === "stdin_response") {
-    // Only used in async mode
-    if (stdinResolver) {
-      const resolve = stdinResolver;
-      stdinResolver = null;
-      resolve(value);
     }
     return;
   }
@@ -156,22 +116,36 @@ self.onmessage = async (e) => {
       return;
     }
 
-    // Reset stdin buffers for a fresh run
     localBuffer = "";
-    asyncInputBuffer = "";
-    stdinResolver = null;
 
     pyodide.setStdout({ batched: (text) => self.postMessage({ type: "stdout", text }) });
     pyodide.setStderr({ batched: (text) => self.postMessage({ type: "stderr", text }) });
 
+    if (!useSAB) {
+      // Pre-buffer mode: stdin reads synchronously from the provided lines.
+      // Pyodide's char-by-char stdin reader is fed from a line queue.
+      const lines = (stdinPreBuffer || "").split("\n");
+      let lineIdx = 0;
+      let charBuf = "";
+
+      pyodide.setStdin({
+        isatty: false,
+        stdin: () => {
+          while (charBuf.length === 0) {
+            if (lineIdx >= lines.length) return null; // EOF
+            charBuf = lines[lineIdx] + "\n";
+            lineIdx++;
+          }
+          const ch = charBuf.charAt(0);
+          charBuf = charBuf.substring(1);
+          return ch;
+        },
+      });
+    }
+
     try {
-      if (useSAB) {
-        pyodide.runPython("import random");
-        pyodide.runPython(code);
-      } else {
-        await pyodide.runPythonAsync("import random");
-        await pyodide.runPythonAsync(code);
-      }
+      pyodide.runPython("import random");
+      pyodide.runPython(code);
       self.postMessage({ type: "done", variables: extractVariables() });
     } catch (error) {
       self.postMessage({ type: "error", error: String(error) });

@@ -4,17 +4,16 @@ let inputControl = null;
 let inputData = null;
 let workerReadyPromise = null;
 
+/**
+ * True when SharedArrayBuffer + Atomics + crossOriginIsolated are all
+ * available.  In that case we use the fast Atomics.wait synchronous stdin
+ * path inside the worker.  Otherwise we fall back to pre-buffered stdin.
+ */
 export const sabAvailable =
   typeof SharedArrayBuffer !== "undefined" &&
   typeof Atomics !== "undefined" &&
-  crossOriginIsolated;
+  (typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : false);
 
-/**
- * Initialises the Pyodide worker.
- * If SharedArrayBuffer + crossOriginIsolated is available we use the fast
- * Atomics-based synchronous stdin path.  Otherwise we fall back to an async
- * message-passing stdin path.
- */
 export function getPyodideWorker() {
   if (worker) return { worker, sab, workerReadyPromise };
 
@@ -45,21 +44,16 @@ export function getPyodideWorker() {
 }
 
 /**
- * Sends input to the worker.
- * SAB mode: writes into shared memory and wakes Atomics.wait.
- * Async mode: posts a stdin_response message.
+ * SAB mode only: write text into shared memory and wake Atomics.wait in the
+ * worker.  In pre-buffer mode the stdin is sent with the run message instead.
  */
 export function sendInputToWorker(text) {
-  if (!worker) return;
+  if (!sabAvailable || !inputControl || !inputData) return;
 
-  if (sabAvailable && inputControl && inputData) {
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(text + "\n");
-    inputData.set(bytes);
-    Atomics.store(inputControl, 1, bytes.length);
-    Atomics.store(inputControl, 0, 1);
-    Atomics.notify(inputControl, 0);
-  } else {
-    worker.postMessage({ type: "stdin_response", value: text + "\n" });
-  }
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(text + "\n");
+  inputData.set(bytes);
+  Atomics.store(inputControl, 1, bytes.length);
+  Atomics.store(inputControl, 0, 1);
+  Atomics.notify(inputControl, 0);
 }
