@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
-import { getPyodideWorker, sendInputToWorker, sabAvailable } from "../lib/pyodide";
+import { getPyodideWorker, sendInputToWorker } from "../lib/pyodide";
 import { translatePythonError } from "../lib/errorTranslator";
 import { useAppStore } from "../store/useAppStore";
 import { GCSE_QUESTIONS } from "../lib/gcseQuestions";
@@ -19,7 +19,6 @@ const buildMonacoTheme = (monaco) => {
       "editor.selectionBackground": "#173047",
     },
   });
-
   monaco.editor.defineTheme("xenon-light", {
     base: "vs",
     inherit: true,
@@ -43,30 +42,15 @@ export default function XenonIDE() {
   const [isRunning, setIsRunning] = useState(false);
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [terminalInput, setTerminalInput] = useState("");
-  // Pre-buffer stdin for environments without SharedArrayBuffer
-  const [stdinPreBuffer, setStdinPreBuffer] = useState("");
-  const [showStdinBuffer, setShowStdinBuffer] = useState(false);
 
-  // Caret fix: store position in a ref so useLayoutEffect can restore it
-  // after each React-controlled re-render without causing extra renders.
   const caretPosRef = useRef(0);
   const terminalInputRef = useRef(null);
   const terminalEndRef = useRef(null);
 
   const {
-    activeProject,
-    enrolledClass,
-    profile,
-    theme,
-    setActiveProjectCode,
-    consoleLines,
-    setConsoleLines,
-    appendConsoleLine,
-    newProject,
-    saveProject,
-    setActiveProjectTitle,
-    queuePracticeTime,
-    flushPracticeTime,
+    activeProject, enrolledClass, profile, theme,
+    setActiveProjectCode, consoleLines, setConsoleLines, appendConsoleLine,
+    newProject, saveProject, setActiveProjectTitle, queuePracticeTime, flushPracticeTime,
   } = useAppStore();
 
   const monacoTheme = useMemo(() => {
@@ -79,32 +63,27 @@ export default function XenonIDE() {
     projectIdRef.current = activeProject.id;
   };
 
-  // Scroll output to bottom on new lines or input prompt
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLines, isWaitingForInput]);
 
-  // Restore caret after every React re-render of the input field
+  // Restore caret position after React re-renders the controlled input
   useLayoutEffect(() => {
     const el = terminalInputRef.current;
     if (!el || !isWaitingForInput) return;
     el.setSelectionRange(caretPosRef.current, caretPosRef.current);
   }, [terminalInput, isWaitingForInput]);
 
-  // Auto-focus when Python requests input (SAB mode)
   useEffect(() => {
     if (isWaitingForInput) terminalInputRef.current?.focus();
   }, [isWaitingForInput]);
 
-  // Sync editor value when project changes
   useEffect(() => {
     if (!editorRef.current) return;
     if (activeProject.id === projectIdRef.current) return;
     projectIdRef.current = activeProject.id;
     const current = editorRef.current.getValue();
-    if (current !== activeProject.code) {
-      editorRef.current.setValue(activeProject.code);
-    }
+    if (current !== activeProject.code) editorRef.current.setValue(activeProject.code);
   }, [activeProject.id, activeProject.code]);
 
   const handleTerminalChange = (e) => {
@@ -145,7 +124,6 @@ export default function XenonIDE() {
             });
             break;
           case "stdin_request":
-            // Only reached in SAB mode
             setIsWaitingForInput(true);
             break;
           case "done":
@@ -169,15 +147,9 @@ export default function XenonIDE() {
       };
 
       worker.addEventListener("message", handleMessage);
-
       await workerReadyPromise;
       setConsoleLines([{ type: "sys", text: "Running..." }]);
-      worker.postMessage({
-        type: "run",
-        code: activeProject.code,
-        // In pre-buffer mode, pass stdin lines; ignored in SAB mode
-        stdinPreBuffer: sabAvailable ? "" : stdinPreBuffer,
-      });
+      worker.postMessage({ type: "run", code: activeProject.code });
     } catch (error) {
       setIsRunning(false);
       appendConsoleLine({ type: "err", text: "Worker Error: " + String(error) });
@@ -202,18 +174,14 @@ export default function XenonIDE() {
 
   useEffect(() => {
     if (profile?.role !== "student" || !enrolledClass?.id) return undefined;
-
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") queuePracticeTime(15);
     }, 15000);
-
     const flushIfHidden = () => {
       if (document.visibilityState === "hidden") flushPracticeTime();
     };
-
     document.addEventListener("visibilitychange", flushIfHidden);
     window.addEventListener("beforeunload", flushPracticeTime);
-
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", flushIfHidden);
@@ -240,7 +208,6 @@ export default function XenonIDE() {
             <button className="xenon-btn-subtle" onClick={() => setShowChallenge((v) => !v)}>Challenges</button>
           </div>
         </div>
-
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <input
             className="xenon-input max-w-lg"
@@ -281,57 +248,25 @@ export default function XenonIDE() {
       )}
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="flex flex-col gap-4">
-          <section className="xenon-panel h-[60vh] overflow-hidden p-3">
-            <Editor
-              beforeMount={buildMonacoTheme}
-              onMount={handleEditorMount}
-              height="100%"
-              defaultLanguage="python"
-              defaultValue={activeProject.code}
-              onChange={(value) => setActiveProjectCode(value || "")}
-              theme={monacoTheme}
-              options={{
-                automaticLayout: true,
-                minimap: { enabled: false },
-                fontFamily: "JetBrains Mono",
-                fontSize: 14,
-                lineHeight: 24,
-                scrollBeyondLastLine: false,
-              }}
-            />
-          </section>
-
-          {/* Pre-buffer stdin panel — shown when SAB is unavailable */}
-          {!sabAvailable && (
-            <section className="xenon-panel p-4">
-              <button
-                className="flex w-full items-center justify-between text-left"
-                onClick={() => setShowStdinBuffer((v) => !v)}
-              >
-                <div>
-                  <h3 className="text-sm font-semibold">Standard Input (stdin)</h3>
-                  <p className="mt-0.5 text-xs text-[var(--muted)]">
-                    Type the inputs your program expects, one per line. These will be fed to{" "}
-                    <code className="xenon-code">input()</code> calls in order.
-                  </p>
-                </div>
-                <span className="ml-4 shrink-0 text-xs text-[var(--muted)]">
-                  {showStdinBuffer ? "▲ Hide" : "▼ Show"}
-                </span>
-              </button>
-              {showStdinBuffer && (
-                <textarea
-                  className="xenon-input xenon-code mt-3 h-24 w-full resize-y text-sm"
-                  placeholder={"Alice\n25\nblue"}
-                  value={stdinPreBuffer}
-                  onChange={(e) => setStdinPreBuffer(e.target.value)}
-                  spellCheck={false}
-                />
-              )}
-            </section>
-          )}
-        </div>
+        <section className="xenon-panel h-[70vh] overflow-hidden p-3">
+          <Editor
+            beforeMount={buildMonacoTheme}
+            onMount={handleEditorMount}
+            height="100%"
+            defaultLanguage="python"
+            defaultValue={activeProject.code}
+            onChange={(value) => setActiveProjectCode(value || "")}
+            theme={monacoTheme}
+            options={{
+              automaticLayout: true,
+              minimap: { enabled: false },
+              fontFamily: "JetBrains Mono",
+              fontSize: 14,
+              lineHeight: 24,
+              scrollBeyondLastLine: false,
+            }}
+          />
+        </section>
 
         <section className="xenon-panel flex h-[70vh] flex-col p-5">
           <h3 className="text-lg font-semibold">Output</h3>
@@ -360,14 +295,13 @@ export default function XenonIDE() {
               <p className="text-sm text-[var(--muted)]">Run your code to see output here.</p>
             )}
 
-            {/* Live interactive input — SAB mode only */}
-            {isWaitingForInput && sabAvailable && (
+            {isWaitingForInput && (
               <div className="mt-2 flex items-center gap-2 rounded border border-amber-200/40 bg-amber-200/5 px-3 py-2">
                 <span className="shrink-0 text-sm font-bold text-amber-200">&gt;</span>
                 <input
                   ref={terminalInputRef}
                   className="w-full bg-transparent text-sm font-bold text-amber-200 outline-none placeholder:text-amber-200/40 caret-amber-200"
-                  placeholder="Type input and press Enter…"
+                  placeholder="Type your answer and press Enter…"
                   value={terminalInput}
                   onChange={handleTerminalChange}
                   onKeyDown={handleTerminalKeyDown}
@@ -391,7 +325,6 @@ export default function XenonIDE() {
             <button className="text-sm text-[var(--muted)] hover:text-white" onClick={() => setShowVariables(false)}>Close</button>
           </div>
           <p className="mt-1 text-sm text-[var(--muted)]">Inspect the current value and type of your variables after execution.</p>
-
           <div className="mt-4 overflow-hidden rounded-lg border border-[var(--border)]">
             <table className="w-full text-left text-sm">
               <thead className="bg-[var(--panel-muted)] text-[var(--muted)]">
