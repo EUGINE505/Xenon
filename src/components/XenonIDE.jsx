@@ -100,7 +100,7 @@ export default function XenonIDE() {
     setConsoleLines([{ type: "sys", text: "Starting Python worker..." }]);
 
     try {
-      const { worker, sab } = getPyodideWorker();
+      const { worker, sab, workerReadyPromise } = getPyodideWorker();
 
       const handleMessage = (e) => {
         const { type, text, variables: newVars, error } = e.data;
@@ -131,18 +131,16 @@ export default function XenonIDE() {
             setIsRunning(false);
             worker.removeEventListener("message", handleMessage);
             break;
-          case "ready":
-            setConsoleLines([{ type: "sys", text: "Worker ready. Running code..." }]);
-            worker.postMessage({ type: "run", code: activeProject.code, sab });
-            break;
           default:
             break;
         }
       };
 
       worker.addEventListener("message", handleMessage);
-      
-      // If worker is already ready, it won't send 'ready' again, so we just run
+
+      // Wait for Pyodide to finish initializing before sending run
+      await workerReadyPromise;
+      setConsoleLines([{ type: "sys", text: "Running..." }]);
       worker.postMessage({ type: "run", code: activeProject.code, sab });
     } catch (error) {
       setIsRunning(false);
