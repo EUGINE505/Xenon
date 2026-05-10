@@ -1,6 +1,29 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { THEORY_UNITS } from "../lib/theoryContent";
+import {
+  BookOpen,
+  Layers,
+  Clock,
+  ChevronDown,
+  ChevronLeft,
+  Search,
+  Shuffle,
+  Trophy,
+  Award,
+  BookMarked,
+  FileText,
+  HelpCircle,
+  Check,
+  X,
+  RotateCcw,
+  ArrowRight,
+  Bookmark,
+  PenLine,
+  GraduationCap,
+  Sparkles,
+  Target
+} from "lucide-react";
 
 // ─── Flashcard component ───────────────────────────────────────────────────────
 
@@ -15,14 +38,14 @@ function Flashcard({ card, onKnow, onLearn, cardKey }) {
   const flip = () => setFlipped((v) => !v);
 
   return (
-    <div className="flex flex-col items-center gap-6">
+    <div className="flex flex-col items-center gap-4">
       <div
         className="relative w-full max-w-lg cursor-pointer"
-        style={{ perspective: "1000px", height: "220px" }}
+        style={{ perspective: "1000px", minHeight: "220px" }}
         onClick={flip}
       >
         <div
-          className="absolute inset-0 transition-transform duration-500"
+          className="w-full transition-transform duration-500"
           style={{
             transformStyle: "preserve-3d",
             transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
@@ -30,46 +53,63 @@ function Flashcard({ card, onKnow, onLearn, cardKey }) {
         >
           {/* Front */}
           <div
-            className="xenon-panel absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl p-8 text-center"
-            style={{ backfaceVisibility: "hidden" }}
+            className="xenon-panel flex flex-col items-center justify-center gap-3 rounded-2xl p-8 text-center"
+            style={{ 
+              backfaceVisibility: "hidden",
+              minHeight: "220px"
+            }}
           >
-            <span className="xenon-kicker">Question — tap to reveal</span>
+            <span className="xenon-kicker flex items-center gap-2">
+              <HelpCircle className="h-3.5 w-3.5" />
+              Question — tap to reveal
+            </span>
             <p className="text-xl font-semibold leading-snug">{card.q}</p>
           </div>
           {/* Back */}
           <div
             className="xenon-panel absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl p-8 text-center"
-            style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)", background: "var(--panel-muted)" }}
+            style={{ 
+              backfaceVisibility: "hidden", 
+              transform: "rotateY(180deg)", 
+              background: "var(--panel-muted)",
+              minHeight: "220px"
+            }}
           >
-            <span className="xenon-kicker text-green-400">Answer</span>
+            <span className="xenon-kicker text-green-400 flex items-center gap-2">
+              <Check className="h-3.5 w-3.5" />
+              Answer
+            </span>
             <p className="text-lg leading-relaxed text-[var(--text)]">{card.a}</p>
           </div>
         </div>
       </div>
 
-      {flipped && (
-        <motion.div
-          className="flex gap-3"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <button
-            className="rounded-lg border border-red-400/40 bg-red-400/10 px-5 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-400/20"
-            onClick={(e) => { e.stopPropagation(); onLearn(); }}
+      <div className="h-12 flex items-center justify-center">
+        {flipped ? (
+          <motion.div
+            className="flex gap-3"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
           >
-            Still learning
-          </button>
-          <button
-            className="rounded-lg border border-green-400/40 bg-green-400/10 px-5 py-2.5 text-sm font-semibold text-green-300 transition hover:bg-green-400/20"
-            onClick={(e) => { e.stopPropagation(); onKnow(); }}
-          >
-            Know it
-          </button>
-        </motion.div>
-      )}
-      {!flipped && (
-        <p className="text-xs text-[var(--muted)]">Tap the card to see the answer</p>
-      )}
+            <button
+              className="rounded-lg border border-red-400/40 bg-red-400/10 px-5 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-400/20 flex items-center gap-2"
+              onClick={(e) => { e.stopPropagation(); onLearn(); }}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Still learning
+            </button>
+            <button
+              className="rounded-lg border border-green-400/40 bg-green-400/10 px-5 py-2.5 text-sm font-semibold text-green-300 transition hover:bg-green-400/20 flex items-center gap-2"
+              onClick={(e) => { e.stopPropagation(); onKnow(); }}
+            >
+              <Check className="h-4 w-4" />
+              Know it
+            </button>
+          </motion.div>
+        ) : (
+          <p className="text-xs text-[var(--muted)]">Tap the card to see the answer</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -114,9 +154,13 @@ function FlashcardSession({ cards, onExit, shuffle: shouldShuffle = false }) {
 
   if (done) {
     const percentage = Math.round((known / total) * 100);
+    const ResultIcon = weak.length === 0 ? Trophy : percentage >= 70 ? Award : BookOpen;
+    
     return (
       <motion.div className="flex flex-col items-center gap-6 py-8 text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <div className="text-5xl">{weak.length === 0 ? "🎉" : percentage >= 70 ? "👏" : "📚"}</div>
+        <div className="h-16 w-16 rounded-2xl bg-[var(--accent)]/20 flex items-center justify-center">
+          <ResultIcon className="h-8 w-8 text-[var(--accent)]" />
+        </div>
         <div>
           <p className="text-2xl font-bold">{weak.length === 0 ? "Perfect score!" : percentage >= 70 ? "Great job!" : "Keep practising!"}</p>
           <p className="mt-2 text-[var(--muted)]">
@@ -126,11 +170,15 @@ function FlashcardSession({ cards, onExit, shuffle: shouldShuffle = false }) {
         </div>
         <div className="flex flex-wrap justify-center gap-3">
           {weak.length > 0 && (
-            <button className="xenon-btn" onClick={retryWeak}>
+            <button className="xenon-btn flex items-center gap-2" onClick={retryWeak}>
+              <RotateCcw className="h-4 w-4" />
               Retry {weak.length} weak card{weak.length !== 1 ? "s" : ""}
             </button>
           )}
-          <button className="xenon-btn-ghost" onClick={onExit}>Back to Notes</button>
+          <button className="xenon-btn-ghost flex items-center gap-2" onClick={onExit}>
+            <ChevronLeft className="h-4 w-4" />
+            Back to Notes
+          </button>
         </div>
       </motion.div>
     );
@@ -151,7 +199,10 @@ function FlashcardSession({ cards, onExit, shuffle: shouldShuffle = false }) {
             />
           </div>
         </div>
-        <button className="xenon-btn-ghost text-xs" onClick={onExit}>Exit</button>
+        <button className="xenon-btn-ghost text-xs flex items-center gap-1" onClick={onExit}>
+          <X className="h-3.5 w-3.5" />
+          Exit
+        </button>
       </div>
 
       <AnimatePresence mode="wait">
@@ -234,10 +285,14 @@ function QuizMode({ cards, onExit }) {
   if (showResults) {
     const correctCount = userAnswers.filter((a) => a.correct).length;
     const percentage = Math.round((correctCount / total) * 100);
+    const ResultIcon = percentage >= 80 ? Trophy : percentage >= 60 ? Award : BookOpen;
+    
     return (
       <motion.div className="space-y-6 py-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="text-center">
-          <div className="text-5xl mb-4">{percentage >= 80 ? "🏆" : percentage >= 60 ? "👏" : "📖"}</div>
+          <div className="h-16 w-16 mx-auto rounded-2xl bg-[var(--accent)]/20 flex items-center justify-center mb-4">
+            <ResultIcon className="h-8 w-8 text-[var(--accent)]" />
+          </div>
           <h3 className="text-2xl font-bold">Quiz Complete!</h3>
           <p className="mt-2 text-[var(--muted)]">
             You got {correctCount} / {total} correct ({percentage}%)
@@ -260,15 +315,19 @@ function QuizMode({ cards, onExit }) {
         </div>
 
         <div className="flex justify-center gap-3">
-          <button className="xenon-btn" onClick={() => {
+          <button className="xenon-btn flex items-center gap-2" onClick={() => {
             setCurrentIndex(0);
             setUserAnswers([]);
             setShowResults(false);
             setCurrentInput("");
           }}>
+            <RotateCcw className="h-4 w-4" />
             Retry Quiz
           </button>
-          <button className="xenon-btn-ghost" onClick={onExit}>Back to Notes</button>
+          <button className="xenon-btn-ghost flex items-center gap-2" onClick={onExit}>
+            <ChevronLeft className="h-4 w-4" />
+            Back to Notes
+          </button>
         </div>
       </motion.div>
     );
@@ -289,7 +348,10 @@ function QuizMode({ cards, onExit }) {
             />
           </div>
         </div>
-        <button className="xenon-btn-ghost text-xs" onClick={onExit}>Exit</button>
+        <button className="xenon-btn-ghost text-xs flex items-center gap-1" onClick={onExit}>
+          <X className="h-3.5 w-3.5" />
+          Exit
+        </button>
       </div>
 
       <motion.div
@@ -317,7 +379,10 @@ function QuizMode({ cards, onExit }) {
             className="space-y-3"
           >
             <div className="p-4 rounded-xl bg-green-400/10 border border-green-400/30">
-              <p className="text-xs text-green-400 mb-1">Correct Answer:</p>
+              <p className="text-xs text-green-400 mb-1 flex items-center gap-1">
+                <Check className="h-3 w-3" />
+                Correct Answer:
+              </p>
               <p className="text-sm text-[var(--text)]">{current.a}</p>
             </div>
             
@@ -325,27 +390,30 @@ function QuizMode({ cards, onExit }) {
               <p className="text-sm text-[var(--muted)] mb-2">How did you do?</p>
               <div className="flex justify-center gap-2">
                 <button
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
                     selfScore === 0 ? "bg-red-400/30 border-red-400" : "bg-white/5 hover:bg-white/10"
                   } border border-[var(--border)]`}
                   onClick={() => setSelfScore(0)}
                 >
+                  <X className="h-4 w-4" />
                   Wrong
                 </button>
                 <button
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
                     selfScore === 0.5 ? "bg-yellow-400/30 border-yellow-400" : "bg-white/5 hover:bg-white/10"
                   } border border-[var(--border)]`}
                   onClick={() => setSelfScore(0.5)}
                 >
+                  <Target className="h-4 w-4" />
                   Partial
                 </button>
                 <button
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
                     selfScore === 1 ? "bg-green-400/30 border-green-400" : "bg-white/5 hover:bg-white/10"
                   } border border-[var(--border)]`}
                   onClick={() => setSelfScore(1)}
                 >
+                  <Check className="h-4 w-4" />
                   Correct
                 </button>
               </div>
@@ -354,11 +422,21 @@ function QuizMode({ cards, onExit }) {
         )}
 
         <button
-          className="xenon-btn w-full"
+          className="xenon-btn w-full flex items-center justify-center gap-2"
           onClick={handleSubmit}
           disabled={!showAnswer ? !currentInput.trim() : selfScore === null}
         >
-          {showAnswer ? "Next Question" : "Check Answer"}
+          {showAnswer ? (
+            <>
+              <ArrowRight className="h-4 w-4" />
+              Next Question
+            </>
+          ) : (
+            <>
+              <Check className="h-4 w-4" />
+              Check Answer
+            </>
+          )}
         </button>
       </motion.div>
     </div>
@@ -376,7 +454,7 @@ function StudyProgress({ unit }) {
     <div className="flex flex-wrap gap-4 text-sm">
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-lg bg-blue-400/20 flex items-center justify-center">
-          <span className="text-blue-400">📖</span>
+          <FileText className="h-4 w-4 text-blue-400" />
         </div>
         <div>
           <p className="font-medium">{totalNotes} sections</p>
@@ -385,7 +463,7 @@ function StudyProgress({ unit }) {
       </div>
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-lg bg-purple-400/20 flex items-center justify-center">
-          <span className="text-purple-400">🃏</span>
+          <Layers className="h-4 w-4 text-purple-400" />
         </div>
         <div>
           <p className="font-medium">{totalCards} cards</p>
@@ -394,7 +472,7 @@ function StudyProgress({ unit }) {
       </div>
       <div className="flex items-center gap-2">
         <div className="h-8 w-8 rounded-lg bg-green-400/20 flex items-center justify-center">
-          <span className="text-green-400">⏱️</span>
+          <Clock className="h-4 w-4 text-green-400" />
         </div>
         <div>
           <p className="font-medium">~{estimatedTime} min</p>
@@ -417,7 +495,8 @@ function KeyTerms({ unit }) {
   return (
     <div className="xenon-panel p-6 rounded-2xl">
       <h3 className="font-semibold mb-4 flex items-center gap-2">
-        <span className="text-[var(--accent)]">📌</span> Key Terms
+        <Bookmark className="h-4 w-4 text-[var(--accent)]" />
+        Key Terms
       </h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {terms.map((item, i) => (
@@ -466,7 +545,8 @@ function TopicDetail({ unit, onBack }) {
           className="mb-4 flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--text)] transition"
           onClick={onBack}
         >
-          ← Back to all topics
+          <ChevronLeft className="h-4 w-4" />
+          Back to all topics
         </button>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -480,10 +560,13 @@ function TopicDetail({ unit, onBack }) {
           {["notes", "flashcards", "quiz"].map((t) => (
             <button
               key={t}
-              className="xenon-tab capitalize"
+              className="xenon-tab capitalize flex items-center gap-2"
               data-active={tab === t}
               onClick={() => { setTab(t); setInFlashcards(false); setInQuiz(false); }}
             >
+              {t === "notes" && <BookOpen className="h-4 w-4" />}
+              {t === "flashcards" && <Layers className="h-4 w-4" />}
+              {t === "quiz" && <PenLine className="h-4 w-4" />}
               {t === "notes" ? "Notes" : t === "flashcards" ? `Flashcards (${unit.flashcards.length})` : "Quiz"}
             </button>
           ))}
@@ -523,9 +606,7 @@ function TopicDetail({ unit, onBack }) {
                 <h3 className="text-lg font-semibold" style={{ color: unit.accent }}>
                   {section.heading}
                 </h3>
-                <span className={`text-[var(--muted)] transition-transform ${expandedSections[section.heading] ? "rotate-180" : ""}`}>
-                  ▼
-                </span>
+                <ChevronDown className={`h-5 w-5 text-[var(--muted)] transition-transform ${expandedSections[section.heading] ? "rotate-180" : ""}`} />
               </button>
               <AnimatePresence>
                 {expandedSections[section.heading] && (
@@ -557,10 +638,12 @@ function TopicDetail({ unit, onBack }) {
               Work through {unit.flashcards.length} flashcards or take a quiz for {unit.title}.
             </p>
             <div className="flex flex-wrap justify-center gap-3 mt-4">
-              <button className="xenon-btn" onClick={() => { setTab("flashcards"); setInFlashcards(true); }}>
+              <button className="xenon-btn flex items-center gap-2" onClick={() => { setTab("flashcards"); setInFlashcards(true); }}>
+                <Layers className="h-4 w-4" />
                 Start Flashcards
               </button>
-              <button className="xenon-btn-ghost" onClick={() => { setTab("quiz"); setInQuiz(true); }}>
+              <button className="xenon-btn-ghost flex items-center gap-2" onClick={() => { setTab("quiz"); setInQuiz(true); }}>
+                <PenLine className="h-4 w-4" />
                 Take Quiz
               </button>
             </div>
@@ -578,7 +661,9 @@ function TopicDetail({ unit, onBack }) {
             />
           ) : (
             <div className="flex flex-col items-center gap-4 py-4 text-center">
-              <span className="text-4xl">🃏</span>
+              <div className="h-16 w-16 rounded-2xl bg-[var(--accent)]/20 flex items-center justify-center">
+                <Layers className="h-8 w-8 text-[var(--accent)]" />
+              </div>
               <div>
                 <p className="text-xl font-bold">{unit.flashcards.length} flashcards</p>
                 <p className="mt-1 text-sm text-[var(--muted)]">
@@ -586,17 +671,19 @@ function TopicDetail({ unit, onBack }) {
                 </p>
               </div>
               
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   checked={shuffleEnabled}
                   onChange={(e) => setShuffleEnabled(e.target.checked)}
                   className="rounded border-[var(--border)] bg-[var(--panel)] text-[var(--accent)]"
                 />
+                <Shuffle className="h-4 w-4 text-[var(--muted)]" />
                 <span className="text-[var(--muted)]">Shuffle cards</span>
               </label>
 
-              <button className="xenon-btn" onClick={() => setInFlashcards(true)}>
+              <button className="xenon-btn flex items-center gap-2" onClick={() => setInFlashcards(true)}>
+                <Sparkles className="h-4 w-4" />
                 Start Session
               </button>
             </div>
@@ -613,14 +700,17 @@ function TopicDetail({ unit, onBack }) {
             />
           ) : (
             <div className="flex flex-col items-center gap-4 py-4 text-center">
-              <span className="text-4xl">📝</span>
+              <div className="h-16 w-16 rounded-2xl bg-[var(--accent)]/20 flex items-center justify-center">
+                <PenLine className="h-8 w-8 text-[var(--accent)]" />
+              </div>
               <div>
                 <p className="text-xl font-bold">Written Quiz</p>
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   Test your knowledge by typing answers to {unit.flashcards.length} questions. Self-mark your answers to track progress.
                 </p>
               </div>
-              <button className="xenon-btn" onClick={() => setInQuiz(true)}>
+              <button className="xenon-btn flex items-center gap-2" onClick={() => setInQuiz(true)}>
+                <Sparkles className="h-4 w-4" />
                 Start Quiz
               </button>
             </div>
@@ -647,11 +737,17 @@ function TopicCard({ unit, onClick }) {
         <p className="xenon-kicker" style={{ color: unit.accent }}>{unit.unit}</p>
         <h3 className="mt-2 text-lg font-semibold leading-snug">{unit.title}</h3>
         <p className="mt-2 text-sm text-[var(--muted)] line-clamp-2">
-          {unit.notes[0]?.body.slice(0, 90)}…
+          {unit.notes[0]?.body.slice(0, 90)}...
         </p>
         <div className="mt-4 flex gap-2">
-          <span className="xenon-badge">{unit.notes.length} sections</span>
-          <span className="xenon-badge">{unit.flashcards.length} cards</span>
+          <span className="xenon-badge flex items-center gap-1">
+            <FileText className="h-3 w-3" />
+            {unit.notes.length} sections
+          </span>
+          <span className="xenon-badge flex items-center gap-1">
+            <Layers className="h-3 w-3" />
+            {unit.flashcards.length} cards
+          </span>
         </div>
       </div>
     </motion.button>
@@ -709,15 +805,27 @@ function TopicSearch({ onSelect }) {
     setResults(matches.slice(0, 8));
   }, [query]);
 
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case "unit": return <BookMarked className="h-3 w-3" />;
+      case "note": return <FileText className="h-3 w-3" />;
+      case "flashcard": return <Layers className="h-3 w-3" />;
+      default: return <BookOpen className="h-3 w-3" />;
+    }
+  };
+
   return (
     <div className="relative">
-      <input
-        type="text"
-        placeholder="Search topics, notes, flashcards..."
-        className="w-full rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--text)] placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:outline-none"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted)]" />
+        <input
+          type="text"
+          placeholder="Search topics, notes, flashcards..."
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--panel)] pl-11 pr-4 py-3 text-sm text-[var(--text)] placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:outline-none"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
       
       {results.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-2 z-10 rounded-xl border border-[var(--border)] bg-[var(--panel)] shadow-lg overflow-hidden">
@@ -731,8 +839,8 @@ function TopicSearch({ onSelect }) {
                 setResults([]);
               }}
             >
-              <span className="text-xs px-2 py-1 rounded bg-white/10" style={{ color: result.unit.accent }}>
-                {result.type === "unit" ? "📚" : result.type === "note" ? "📖" : "🃏"}
+              <span className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-white/10" style={{ color: result.unit.accent }}>
+                {getTypeIcon(result.type)}
               </span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{result.text}</p>
@@ -768,7 +876,10 @@ export default function TheoryPanel() {
       <div className="xenon-panel p-6 sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <span className="xenon-pill">GCSE Computer Science Theory</span>
+            <span className="xenon-pill flex items-center gap-2 w-fit">
+              <GraduationCap className="h-4 w-4" />
+              GCSE Computer Science Theory
+            </span>
             <h2 className="mt-4 text-2xl font-bold sm:text-3xl">Theory & Revision</h2>
             <p className="mt-2 max-w-2xl text-sm text-[var(--muted)] sm:text-base">
               All 9 GCSE Computer Science units — concise notes, self-marking flashcards, and written quizzes. Select a topic to start learning.
@@ -783,22 +894,28 @@ export default function TheoryPanel() {
 
         {/* Stats */}
         <div className="mt-6 flex flex-wrap gap-6 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">📚</span>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-blue-400/20 flex items-center justify-center">
+              <BookMarked className="h-5 w-5 text-blue-400" />
+            </div>
             <div>
               <p className="font-bold text-lg">{THEORY_UNITS.length}</p>
               <p className="text-xs text-[var(--muted)]">Units</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">📖</span>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-purple-400/20 flex items-center justify-center">
+              <FileText className="h-5 w-5 text-purple-400" />
+            </div>
             <div>
               <p className="font-bold text-lg">{totalNotes}</p>
               <p className="text-xs text-[var(--muted)]">Sections</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🃏</span>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-green-400/20 flex items-center justify-center">
+              <Layers className="h-5 w-5 text-green-400" />
+            </div>
             <div>
               <p className="font-bold text-lg">{totalCards}</p>
               <p className="text-xs text-[var(--muted)]">Flashcards</p>
