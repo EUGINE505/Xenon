@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
 import { getPyodideWorker, sendInputToWorker } from "../lib/pyodide";
@@ -43,7 +43,6 @@ export default function XenonIDE() {
   const [isWaitingForInput, setIsWaitingForInput] = useState(false);
   const [terminalInput, setTerminalInput] = useState("");
 
-  const caretPosRef = useRef(0);
   const terminalInputRef = useRef(null);
   const terminalEndRef = useRef(null);
 
@@ -67,12 +66,7 @@ export default function XenonIDE() {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLines, isWaitingForInput]);
 
-  // Restore caret position after React re-renders the controlled input
-  useLayoutEffect(() => {
-    const el = terminalInputRef.current;
-    if (!el || !isWaitingForInput) return;
-    el.setSelectionRange(caretPosRef.current, caretPosRef.current);
-  }, [terminalInput, isWaitingForInput]);
+
 
   useEffect(() => {
     if (isWaitingForInput) terminalInputRef.current?.focus();
@@ -86,19 +80,12 @@ export default function XenonIDE() {
     if (current !== activeProject.code) editorRef.current.setValue(activeProject.code);
   }, [activeProject.id, activeProject.code]);
 
-  const handleTerminalChange = (e) => {
-    caretPosRef.current = e.target.selectionStart ?? e.target.value.length;
-    setTerminalInput(e.target.value);
-  };
-
   const handleTerminalKeyDown = (e) => {
-    caretPosRef.current = e.currentTarget.selectionStart ?? terminalInput.length;
     if (e.key === "Enter" && isWaitingForInput) {
       const value = terminalInput;
       appendConsoleLine({ type: "in", text: value });
       sendInputToWorker(value);
       setTerminalInput("");
-      caretPosRef.current = 0;
       setIsWaitingForInput(false);
     }
   };
@@ -303,9 +290,8 @@ export default function XenonIDE() {
                   className="w-full bg-transparent text-sm font-bold text-amber-200 outline-none placeholder:text-amber-200/40 caret-amber-200"
                   placeholder="Type your answer and press Enter…"
                   value={terminalInput}
-                  onChange={handleTerminalChange}
+                  onChange={(e) => setTerminalInput(e.target.value)}
                   onKeyDown={handleTerminalKeyDown}
-                  onClick={(e) => { caretPosRef.current = e.currentTarget.selectionStart ?? terminalInput.length; }}
                   spellCheck={false}
                   autoComplete="off"
                   autoCorrect="off"
